@@ -15,7 +15,8 @@
     "watch": "tsc --watch",
     "start": "node dist/index.js",
     "smoke": "node --env-file=.env dist/smoke.js",
-    "smoke:mcp": "node dist/smoke-mcp.js"
+    "smoke:mcp": "node dist/smoke-mcp.js",
+    "smoke:jambase": "node --env-file=.env dist/jambase-discovery.js"
   },
   "engines": {
     "node": ">=20"
