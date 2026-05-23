@@ -53,6 +53,12 @@ rejects it as `api_key_inactive`. Remaining path is step 2 → JamBase support o
   Ticketmaster-only.
 - Live-verify an Atlanta search surfaces a JamBase-sourced event
   (e.g. Atlanta Jazz Fest) with attribution. That is the positive signal.
+  **Gap confirmed 2026-05-23:** Ticketmaster ALONE does NOT carry the Atlanta
+  Jazz Festival (the free Piedmont Park Memorial Day event) — verified empty via
+  general Atlanta search, `genre=Jazz`, and `keyword="Atlanta Jazz Festival"`.
+  Free/non-ticketed festivals aren't in TM's Discovery catalog. Surfacing the
+  Jazz Fest is therefore the concrete payoff of the JamBase source — this is the
+  exact coverage hole it closes.
 
 **Refs.** base = `www.jambase.com/jb-api/v3`, auth = `apikey` query param.
 Source map: `docs/atlanta-source-map.md`. Discovery harness: `src/jambase-discovery.ts`
