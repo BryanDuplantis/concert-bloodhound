@@ -27,11 +27,16 @@ distinguished our key from noise. Base URL + `apikey` query-param auth ARE
 confirmed correct (the API parses and evaluates the param: present→inactive,
 absent→missing). Root cause is account-side.
 
+**Update 2026-05-23 (key-string path ELIMINATED):** re-copied the exact key
+from the dashboard via clipboard→`.env` — it came back **byte-identical**
+(54 chars, `…LjzS`). No typo / whitespace / truncation; the `.env` value matches
+the dashboard exactly. The wrong/typo'd-key hypothesis is dead. Root cause is
+**account-side provisioning**: the dashboard shows the key "Active" while the API
+rejects it as `api_key_inactive`. Remaining path is step 2 → JamBase support only.
+
 **Resolve (on the JamBase account/dashboard):**
-1. Re-copy the exact API key from the dashboard → update `.env` via
-   clipboard/`pbpaste` (never typed, never in chat). Rules out a stale/typo'd
-   or truncated string — the last-4 match (`LjzS`) does not prove the full
-   54-char string is correct.
+1. ~~Re-copy the exact API key → update `.env`.~~ ✅ DONE 2026-05-23 — key string
+   verified byte-identical; eliminated as a cause.
 2. Verify the account has an **active API plan/subscription**, distinct from the
    key's "Active" toggle. Confirm the field copied is the API key, not an
    account / client / app ID.
