@@ -25,8 +25,8 @@ function apiKey(): string {
 }
 
 /**
- * Raw GET against /v3/<path>. The key is attached here as a Bearer token and
- * must never be logged. Exported so the discovery harness can probe param
+ * Raw GET against /v3/<path>. The key is attached here as the `apikey` query
+ * param and must never be logged. Exported so the discovery harness can probe param
  * variants directly (JamBase's docs are SPA-walled, so the exact param names
  * and response paths are confirmed empirically — see src/jambase-discovery.ts).
  */
