@@ -1,0 +1,31 @@
+{
+  "name": "concert-bloodhound",
+  "version": "0.1.0",
+  "description": "MCP server for discovering live concerts via the Ticketmaster Discovery API — real listings only, never invented.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "concert-bloodhound": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "smoke": "node --env-file=.env dist/smoke.js",
+    "smoke:mcp": "node dist/smoke-mcp.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
