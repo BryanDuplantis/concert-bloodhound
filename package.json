@@ -16,7 +16,8 @@
     "start": "node dist/index.js",
     "smoke": "node --env-file=.env dist/smoke.js",
     "smoke:mcp": "node dist/smoke-mcp.js",
-    "smoke:jambase": "node --env-file=.env dist/jambase-discovery.js"
+    "smoke:jambase": "node --env-file=.env dist/jambase-discovery.js",
+    "test": "tsc && node --test dist/geo.test.js"
   },
   "engines": {
     "node": ">=20"
