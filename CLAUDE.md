@@ -1,17 +1,25 @@
 @~/.claude/CLAUDE.md
 
 ---
-## ⏸ REMINDER — JamBase 2nd source is PARKED (since 2026-05-23)
-**Surface this at the start of any session on this project.** The JamBase
-integration is parked, blocked on JamBase **account-side key provisioning** — NOT
-a code or config problem. The key string is verified byte-correct and the
-base/auth are confirmed; the API still returns `api_key_inactive` (a fake key
-returns the identical error). **Do not re-debug the key or revisit the
-"rotation-grace / wait for expiry" theory — both are dead ends.** The only
-unblock is JamBase provisioning an active API *plan* behind the key (or a support
-ticket). Full diagnosis + resolve steps: `BACKLOG.md`. Concert Bloodhound runs on
-Ticketmaster meanwhile — when the key activates, `npm run smoke:jambase`
-returning a real event resumes the wire-up with no re-diagnosis needed.
+## ✅ JamBase — root cause RESOLVED 2026-05-25 (was a client v1→v3 migration gap)
+The two-day "blocked" JamBase saga was **our bug, not JamBase's.** Two earlier
+diagnoses (5/23 "account-side provisioning", 5/25 "backend bug → support ticket")
+were BOTH reached without reading the vendor's API docs — and both wrong. Real cause:
+the client never migrated to the v3 Data API. **Proven fixed 5/25**: a correct v3
+request returns 40 real Atlanta events incl. the free Atlanta Jazz Festival.
+
+**Working recipe** (full detail + event shape in `BACKLOG.md`):
+- Origin `https://api.data.jambase.com/v3` · auth `Authorization: Bearer <key>` ·
+  send `Accept`+`User-Agent` · two-step geo (`/geographies/metros` → `geoMetroId` →
+  `/events?geoMetroId=jambase:10`) · NO `perPage` query param (use `?page=N`).
+- Support ticket is **obsolete/do-not-send** (`docs/jambase-support-ticket.md`).
+- **Lesson logged:** read the vendor's current API docs BEFORE theorizing about why
+  auth fails — a control test proves the key is unrecognized but NOT *why*.
+
+**Remaining (the actual wireup):** migrate `src/jambase.ts` to the recipe above,
+re-validate `normalizeJamBaseEvent` against the live shape, and merge JamBase into
+`search_concerts` (parallel w/ TM, dedupe, "Powered by JamBase" attribution). The
+positive signal is `npm run smoke:jambase` returning a real dated Atlanta event.
 ---
 
 # Concert Bloodhound — Project Conventions

@@ -51,8 +51,33 @@ over pure on-demand, i.e. a small web app rather than (or alongside) the MCP.
 
 ---
 
-## JamBase 2nd source — BLOCKED on JamBase-side key provisioning
-_Parked 2026-05-23. Scaffolded & committed (`daa4da4`); NOT wired into the live tools._
+## JamBase 2nd source — ✅ ROOT CAUSE RESOLVED 2026-05-25 (was a client v1→v3 gap)
+_Scaffolded 2026-05-23 (`daa4da4`). The two-day "blocked" saga was OUR bug, not
+JamBase's: the client used a retired origin + `apikey` query-param auth against a
+new self-service-platform key. Proven fixed 5/25 — a correctly-formed v3 request
+returns 40 real Atlanta events incl. the free **Atlanta Jazz Festival** (the exact
+TM coverage hole this source exists to close)._
+
+**✅ THE WORKING RECIPE (verified 2026-05-25 with the rotated `…BwF2` key):**
+- **Origin:** `https://api.data.jambase.com/v3`  (NOT `www.jambase.com/jb-api/v3`)
+- **Auth:** header `Authorization: Bearer <key>`  (NOT `?apikey=<key>`)
+- **Also send:** `Accept: application/json`, a `User-Agent`.
+- **Geo model is two-step** — events are queried by JamBase geo ID, not city name:
+  1. `GET /geographies/metros?metroHasUpcomingEvents=true` → 203 metros; Atlanta = `geoMetroId=jambase:10`
+     (intl: `GET /geographies/cities?geoCityName=London&geoCountryIso2=GB` → `geoCityId=jambase:N`)
+  2. `GET /events?geoMetroId=jambase:10` → events array
+- **Pagination:** response has `pagination{page,perPage(=40),totalItems,totalPages,nextPage,...}`.
+  `perPage` is a RESPONSE field, NOT a query param (passing `?perPage=` → 400 unknown-parameter).
+  Page through with `?page=N` (or follow `pagination.nextPage`).
+- **Event shape (schema.org JSON-LD):** `name`, `identifier`(`jambase:N`), `url`,
+  `eventStatus`("scheduled"), `startDate`(date OR ISO datetime — split on "T"),
+  `endDate`, `isAccessibleForFree`(bool), `location{name, address{addressLocality(city),
+  addressRegion{name,alternateName}, x-jamBaseMetroId, x-jamBaseCityId}, geo{latitude,longitude}}`,
+  `offers[]`(empty for free shows → price unavailable), `performer[]{name, genre[], x-isHeadliner}`.
+  The existing `normalizeJamBaseEvent` already matches this; minor tweaks only (prefer
+  `addressRegion.alternateName` "GA"; scan performers for first non-empty `genre`).
+
+**Earlier (now-retracted) trail — kept as a cautionary record:**
 
 **Blocker.** The API rejects the `.env` key (ends `LjzS`) with `api_key_inactive`.
 
@@ -80,14 +105,44 @@ the dashboard exactly. The wrong/typo'd-key hypothesis is dead. Root cause is
 **account-side provisioning**: the dashboard shows the key "Active" while the API
 rejects it as `api_key_inactive`. Remaining path is step 2 → JamBase support only.
 
+**Update 2026-05-25 — earlier "backend bug" conclusion RETRACTED; root cause is
+almost certainly OURS (we never migrated to the v3 API).** Facts established 5/25:
+- Dashboard confirms an **active plan** (quota 1,000, 0 used, 5/23→6/22). Plan exists.
+- Rotated the key (`…LjzS` → `…BwF2`, clipboard→`.env`); the new key still returns
+  `api_key_inactive` on our current call. (So rotation isn't the fix.)
+- **THEN actually read JamBase's API docs (should have been step one).** JamBase
+  launched a self-service Data Platform; there is a **v1→v3 migration** with THREE
+  changes: **new origin, `Authorization: Bearer` header, new key format.** Our client
+  (`src/jambase.ts`) does NONE of these — it calls the legacy origin
+  `www.jambase.com/jb-api/v3` with an `apikey` *query param*.
+- Empirical probes 5/25:
+  - `www.jambase.com/jb-api/v3` + `Authorization: Bearer <key>` → HTTP 403
+    **`Wrong number of segments`** (a JWT-parse error → that endpoint's Bearer path
+    wants a JWT, not our opaque `jb…` key).
+  - `api.jambase.com/v3` (a guessed origin) → DNS/fetch failure (wrong host).
+- **Conclusion:** `api_key_inactive` is most likely the *legacy* endpoint rejecting a
+  *new-platform* key — i.e. a client-side origin/auth mismatch, NOT a JamBase backend
+  bug. The 5/23 "account-side provisioning" diagnosis and the 5/25 "backend bug /
+  send a support ticket" diagnosis are BOTH retracted: neither checked the vendor docs.
+- **Support ticket is ON HOLD — do NOT send it.** (`docs/jambase-support-ticket.md`)
+- **Open:** the exact v3 origin + auth is in JamBase's SPA docs (`/api/docs/request-builder`,
+  `/api/docs/migrate-from-v1`) which WebFetch can't render — needs the verbatim curl
+  from the authenticated dashboard. Next step is migrate the client, not escalate.
+
 **Resolve (on the JamBase account/dashboard):**
 1. ~~Re-copy the exact API key → update `.env`.~~ ✅ DONE 2026-05-23 — key string
    verified byte-identical; eliminated as a cause.
-2. Verify the account has an **active API plan/subscription**, distinct from the
-   key's "Active" toggle. Confirm the field copied is the API key, not an
-   account / client / app ID.
-3. If both look right and it still returns `api_key_inactive` → JamBase support
-   (dashboard and API state are out of sync on their side).
+2. ~~Verify the account has an **active API plan/subscription**.~~ ✅ DONE 2026-05-25 —
+   dashboard confirms an active plan (quota 1,000, 0 used, 5/23→6/22). Plan EXISTS.
+3. ~~Rotate the key to force a fresh plan↔key binding.~~ ✅ DONE 2026-05-25 — rotated
+   to `…BwF2`; new key returns the **identical `api_key_inactive`**. Eliminated.
+4. ~~JamBase support ticket.~~ ON HOLD 2026-05-25 — premature; we hadn't read the docs.
+5. **← ACTIVE PATH: migrate the client to the JamBase v3 Data API.** Get the verbatim
+   request example from the authenticated Request Builder (`data.jambase.com/api/docs/
+   request-builder`): exact v3 origin/host, `Authorization: Bearer` format, and confirm
+   the dashboard key is the right credential. Then update `src/jambase.ts` (BASE +
+   header auth, drop the `apikey` query param) and re-probe. Only if a correct v3 call
+   STILL fails does the support ticket come off hold.
 
 **Then (once `npm run smoke:jambase` returns a real Atlanta event):**
 - Finalize `normalizeJamBaseEvent` in `src/jambase.ts` against the dumped live
