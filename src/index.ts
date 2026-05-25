@@ -3,9 +3,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
+import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
 import { fetchMetroFeeds } from "./feeds/index.js";
-import { applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
+import { applyDateWindow, applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
 import { resultShape, type Concert } from "./types.js";
 import { formatResults } from "./format.js";
 
@@ -87,12 +88,19 @@ server.registerTool(
     const fetchSize = args.maxPrice != null ? Math.min(Math.max(want * 2, 20), 50) : want;
     const geo = resolveGeo(args.latlong, args.city);
 
-    // Ticketmaster is the backbone; a TM outage shouldn't suppress open-feed
-    // results, so capture its error rather than throwing the whole call.
-    let tm: Concert[] = [];
-    let tmError: string | null = null;
-    try {
-      tm = await searchEvents({
+    // Open feeds augment a resolved metro only when no genre filter is set — they
+    // carry no per-event genre, so honoring one would mean guessing. JamBase
+    // augments any mapped metro: under a genre filter it honors the request itself
+    // (matching the headliner's tags, never guessing), so it isn't gated off.
+    const wantFeeds = !!geo?.metroKey && !args.genre;
+    const jbId = geo?.metroKey ? jambaseMetroId(geo.metroKey) : null;
+
+    // Fetch every source in parallel and settle each independently. Ticketmaster
+    // is the backbone, but a TM outage must not suppress the supplementary
+    // sources, and a JamBase/feed failure must never break TM — so no one source
+    // can throw the whole call.
+    const [tmRes, jbRes, feedRes] = await Promise.allSettled([
+      searchEvents({
         // Geospatial wins: coords + radius cover the whole metro, so the city
         // text match is dropped — keeping it would narrow back to the city proper.
         city: geo ? undefined : args.city,
@@ -105,27 +113,39 @@ server.registerTool(
         startDateTime: toStart(args.startDate),
         endDateTime: toEnd(args.endDate),
         size: fetchSize,
-      });
-    } catch (e) {
-      tmError = errMsg(e);
-    }
+      }),
+      jbId
+        ? searchJamBaseEvents({
+            geoMetroId: jbId,
+            eventDateFrom: args.startDate,
+            eventDateTo: args.endDate,
+            genre: args.genre,
+          })
+        : Promise.resolve([] as Concert[]),
+      wantFeeds
+        ? fetchMetroFeeds(geo!.metroKey!, { start: args.startDate, end: args.endDate })
+        : Promise.resolve([] as Concert[]),
+    ]);
 
-    // Open feeds augment a resolved metro. Skipped when a genre filter is set —
-    // the feeds carry no per-event genre, so we can't honor it without guessing.
-    let merged = tm;
-    let feedCount = 0;
-    if (geo?.metroKey && !args.genre) {
-      const feedEvents = await fetchMetroFeeds(geo.metroKey, {
-        start: args.startDate,
-        end: args.endDate,
-      });
-      feedCount = feedEvents.length;
-      merged = mergeConcerts(tm, feedEvents);
-    }
+    let tm: Concert[] = [];
+    let tmError: string | null = null;
+    if (tmRes.status === "fulfilled") tm = tmRes.value;
+    else tmError = errMsg(tmRes.reason);
+
+    const jb = jbRes.status === "fulfilled" ? jbRes.value : [];
+    if (jbRes.status === "rejected") console.error(`JamBase failed: ${errMsg(jbRes.reason)}`);
+    const feed = feedRes.status === "fulfilled" ? feedRes.value : [];
+    if (feedRes.status === "rejected") console.error(`Feeds failed: ${errMsg(feedRes.reason)}`);
+
+    // Merge order = source priority: Ticketmaster wins (it alone carries price and
+    // native ticket links), then JamBase, then open feeds. Dedup is artist|date.
+    let merged = mergeConcerts(mergeConcerts(tm, jb), feed);
+    const extraCount = jb.length + feed.length;
 
     if (tmError && merged.length === 0) return fail(tmError);
 
-    const results = applyMaxPrice(merged, args.maxPrice).sort(byDateAsc).slice(0, want);
+    const windowed = applyDateWindow(merged, args.startDate, args.endDate);
+    const results = applyMaxPrice(windowed, args.maxPrice).sort(byDateAsc).slice(0, want);
     const where = geo?.label ?? args.city ?? args.stateCode ?? "your search";
 
     if (results.length === 0) {
@@ -140,8 +160,8 @@ server.registerTool(
     let summary = `Here ${results.length === 1 ? "is" : "are"} ${results.length} concert${
       results.length === 1 ? "" : "s"
     } in ${where}:`;
-    if (tmError && feedCount > 0) {
-      summary += " (Ticketmaster was unreachable — showing open-feed listings only.)";
+    if (tmError && extraCount > 0) {
+      summary += " (Ticketmaster was unreachable — showing results from other sources only.)";
     } else if (unknownPrice > 0) {
       summary += ` (${unknownPrice} have no listed price and were kept rather than filtered out.)`;
     }
@@ -187,9 +207,10 @@ server.registerTool(
         endDateTime: toEnd(args.endDate),
         size: Math.min(Math.max(want, 20), 50),
       });
-      const results = applyMaxPrice(raw, args.maxPrice).slice(0, want);
+      const windowed = applyDateWindow(raw, args.startDate, args.endDate);
+      const results = applyMaxPrice(windowed, args.maxPrice).slice(0, want);
       const summary = results.length
-        ? `Here ${results.length === 1 ? "is" : "are"} upcoming ${args.artist} concert${
+        ? `Here ${results.length === 1 ? "is an" : "are"} upcoming ${args.artist} concert${
             results.length === 1 ? "" : "s"
           }:`
         : `I didn't find upcoming ${args.artist} concerts${
@@ -237,10 +258,11 @@ server.registerTool(
         endDateTime: toEnd(args.endDate),
         size: Math.min(Math.max(want, 20), 50),
       });
-      const results = applyMaxPrice(raw, args.maxPrice).slice(0, want);
+      const windowed = applyDateWindow(raw, args.startDate, args.endDate);
+      const results = applyMaxPrice(windowed, args.maxPrice).slice(0, want);
       const label = venue.city ? `${venue.name} (${venue.city})` : venue.name;
       const summary = results.length
-        ? `Here ${results.length === 1 ? "is" : "are"} upcoming concert${
+        ? `Here ${results.length === 1 ? "is an" : "are"} upcoming concert${
             results.length === 1 ? "" : "s"
           } at ${label}:`
         : `I found ${label}, but no upcoming concerts are currently listed there for that window.`;

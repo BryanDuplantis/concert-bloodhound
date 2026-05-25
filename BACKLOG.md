@@ -51,12 +51,42 @@ over pure on-demand, i.e. a small web app rather than (or alongside) the MCP.
 
 ---
 
-## JamBase 2nd source — ✅ ROOT CAUSE RESOLVED 2026-05-25 (was a client v1→v3 gap)
+## JamBase 2nd source — ✅ SHIPPED & LIVE 2026-05-25 (v3 migration + search_concerts wireup)
 _Scaffolded 2026-05-23 (`daa4da4`). The two-day "blocked" saga was OUR bug, not
 JamBase's: the client used a retired origin + `apikey` query-param auth against a
 new self-service-platform key. Proven fixed 5/25 — a correctly-formed v3 request
 returns 40 real Atlanta events incl. the free **Atlanta Jazz Festival** (the exact
 TM coverage hole this source exists to close)._
+
+**✅ DONE — the wireup is live (2026-05-25).** `src/jambase.ts` migrated to the v3
+recipe below; `normalizeJamBaseEvent` validated vs the live shape (festival name
+headlines, ISO/date-only split, headliner-only genre, empty `priceSpecification` →
+null price, `e.url` link, GA region); merged into `search_concerts` parallel with TM
++ feeds (`Promise.allSettled`, priority TM > JamBase > feeds, dedup artist|date,
+mapped metro); `Powered by JamBase` attribution added to `format.ts`. Positive
+signals confirmed: `npm run smoke:jambase` → 40 dated Atlanta events (Jazz Fest #1);
+`npm run smoke:mcp` → Jazz Fest surfaces in a live Atlanta `search_concerts` with
+attribution. Offline guards: `src/jambase.test.ts`. Exploratory
+`src/jambase-discovery.ts` retired → `src/smoke-jambase.ts`. New metros: add to
+`JAMBASE_METROS` in `jambase.ts` (id from `/geographies/metros`).
+
+**✅ Post-test follow-ups DONE 2026-05-25** (after the 8-scenario live run): dedup
+simplified to **artist|date** (venue dropped — TM/JamBase venue strings irreconcilable,
+e.g. "District - GA" vs "District Atlanta", "Tabernacle"/"The Tabernacle"); **date
+window** now trimmed by local date (`applyDateWindow`) to fix a TM UTC-midnight leak
+(a May-28 8pm-EDT show leaking into a May-29 search); **genre-aware JamBase** — under
+a `genre` filter JamBase stays in, matches the headliner's tags (token-subset, "rap"
+≠ "trap"), and relabels to the matched tag, recovering shows TM files under a
+neighbouring genre (Death Angel under Metal → surfaces on a Rock search); plus the
+`search_by_artist`/`search_by_venue` singular-grammar nit.
+
+**Open (not blocking):** (1) **artist-NAME divergence** ("mgk" vs "Machine Gun
+Kelly") can slip a dupe — DELIBERATELY not fixed: fuzzy artist matching risks merging
+distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain. (2) **Date
+window last-day**: TM can still OMIT a late-night show on the window's last local day
+(UTC end cuts off before local midnight) — needs a tz-aware query, not just the
+client trim. (3) **Genre-aware JamBase** scans page-1 only and won't bridge taxonomy
+gaps (a "R&B" request misses "rhythm-and-blues-soul").
 
 **✅ THE WORKING RECIPE (verified 2026-05-25 with the rotated `…BwF2` key):**
 - **Origin:** `https://api.data.jambase.com/v3`  (NOT `www.jambase.com/jb-api/v3`)
@@ -161,6 +191,8 @@ almost certainly OURS (we never migrated to the v3 API).** Facts established 5/2
   Jazz Fest is therefore the concrete payoff of the JamBase source — this is the
   exact coverage hole it closes.
 
-**Refs.** base = `www.jambase.com/jb-api/v3`, auth = `apikey` query param.
-Source map: `docs/atlanta-source-map.md`. Discovery harness: `src/jambase-discovery.ts`
-(`npm run smoke:jambase`).
+**Refs.** LIVE v3 client: origin `https://api.data.jambase.com/v3`, auth
+`Authorization: Bearer <key>` (see `src/jambase.ts`). Source map:
+`docs/atlanta-source-map.md`. Smoke: `src/smoke-jambase.ts` (`npm run smoke:jambase`).
+_(The old `www.jambase.com/jb-api/v3` + `apikey` query param and
+`src/jambase-discovery.ts` are retired — see the cautionary record above.)_

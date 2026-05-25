@@ -9,6 +9,7 @@
  * within the long-lived stdio server.
  */
 import type { Concert } from "../types.js";
+import { safeUrl } from "../types.js";
 import { fetchICalText, parseICal, parseLocation, type ICalEvent } from "./ical.js";
 import { sourcesForMetro, type FeedSource } from "./registry.js";
 
@@ -56,7 +57,7 @@ function toConcert(ev: ICalEvent, src: FeedSource): Concert {
     priceMax: null,
     currency: null,
     availability: "Availability unknown",
-    url: ev.url,
+    url: safeUrl(ev.url),
     ageRestriction: null,
     source: src.name,
   };

@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
+import { applyDateWindow, applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
 import type { Concert } from "./types.js";
 
 function concert(p: Partial<Concert>): Concert {
@@ -57,12 +57,59 @@ test("mergeConcerts drops a duplicate (same artist|date|venue, case-insensitive)
   assert.equal(out[0].source, "Ticketmaster");
 });
 
+test("mergeConcerts dedups same artist+date regardless of venue formatting", () => {
+  // The leaks the live tests exposed: same artist + date, but each source
+  // formats (or qualifies) the venue differently. All must collapse to the TM
+  // copy — identity is artist+date, not the irreconcilable venue string.
+  const venuePairs: Array<[string, string]> = [
+    ["Tabernacle", "The Tabernacle"],
+    ["Center Stage Theater", "Center Stage"],
+    ["The Masquerade - Hell", "The Masquerade (Hell Stage)"],
+    ["District - GA", "District Atlanta"], // TM appends state, JamBase the city
+  ];
+  for (const [tmVenue, jbVenue] of venuePairs) {
+    const tm = [concert({ artists: ["Alex Isley"], date: "2026-05-26", venue: tmVenue, source: "Ticketmaster" })];
+    const jb = [concert({ artists: ["Alex Isley"], date: "2026-05-26", venue: jbVenue, source: "JamBase" })];
+    const out = mergeConcerts(tm, jb);
+    assert.equal(out.length, 1, `${tmVenue} vs ${jbVenue}`);
+    assert.equal(out[0].source, "Ticketmaster");
+  }
+});
+
+test("mergeConcerts collapses same artist+date even at a different venue (documented tradeoff)", () => {
+  // A touring act can't be two places on one day; venue strings are unreliable
+  // across sources, so we intentionally dedup on artist+date alone. The TM copy
+  // (with its ticket link) wins.
+  const tm = [concert({ artists: ["Alex Isley"], date: "2026-05-26", venue: "Tabernacle", source: "Ticketmaster" })];
+  const jb = [concert({ artists: ["Alex Isley"], date: "2026-05-26", venue: "Eddie's Attic", source: "JamBase" })];
+  const out = mergeConcerts(tm, jb);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].source, "Ticketmaster");
+});
+
 test("byDateAsc orders earliest first, undated last", () => {
   const a = concert({ date: "2026-07-10" });
   const b = concert({ date: "2026-06-01" });
   const c = concert({ date: null });
   const sorted = [a, c, b].sort(byDateAsc);
   assert.deepEqual(sorted.map((x) => x.date), ["2026-06-01", "2026-07-10", null]);
+});
+
+test("applyDateWindow drops events outside the local-date window", () => {
+  const before = concert({ date: "2026-05-28" }); // the UTC-boundary leak
+  const inside = concert({ date: "2026-05-30" });
+  const after = concert({ date: "2026-06-01" });
+  const undated = concert({ date: null });
+  const out = applyDateWindow([before, inside, after, undated], "2026-05-29", "2026-05-31");
+  assert.deepEqual(out, [inside]); // before/after trimmed; undated dropped in a dated search
+});
+
+test("applyDateWindow honors one-sided bounds and is a no-op with none", () => {
+  const a = concert({ date: "2026-05-28" });
+  const b = concert({ date: "2026-05-30" });
+  assert.deepEqual(applyDateWindow([a, b], "2026-05-29", undefined), [b]); // start only
+  assert.deepEqual(applyDateWindow([a, b], undefined, "2026-05-29"), [a]); // end only
+  assert.deepEqual(applyDateWindow([a, b], undefined, undefined), [a, b]); // no bounds
 });
 
 test("applyMaxPrice keeps null-price events, drops over-budget", () => {

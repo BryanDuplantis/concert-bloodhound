@@ -6,6 +6,21 @@ import { z } from "zod";
  * the server unless it conforms. Fields the API didn't provide are `null`,
  * never guessed. Downstream formatters render those nulls as "not listed".
  */
+/**
+ * Validate that a URL is https (or http) before surfacing it. Rejects
+ * javascript:, data:, and any other non-http scheme that could be dangerous
+ * if a downstream surface renders the link as clickable.
+ */
+export function safeUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export const ConcertSchema = z.object({
   name: z.string(),
   artists: z.array(z.string()),

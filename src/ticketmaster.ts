@@ -1,4 +1,5 @@
 import type { Concert } from "./types.js";
+import { safeUrl } from "./types.js";
 
 const BASE = "https://app.ticketmaster.com/discovery/v2";
 
@@ -39,6 +40,11 @@ function apiKey(): string {
   return key;
 }
 
+/** Strip the api key out of any string before it can be logged or surfaced. */
+function redact(s: string, key: string): string {
+  return key ? s.split(key).join("***") : s;
+}
+
 /**
  * Single chokepoint for Discovery API calls. The api key is attached here and
  * never logged — callers must not print the returned URL or the key.
@@ -47,8 +53,9 @@ async function tmFetch(
   path: string,
   params: Record<string, string | number | undefined>,
 ): Promise<any> {
+  const key = apiKey();
   const url = new URL(`${BASE}/${path}`);
-  url.searchParams.set("apikey", apiKey());
+  url.searchParams.set("apikey", key);
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }
@@ -58,7 +65,7 @@ async function tmFetch(
     res = await fetch(url, { headers: { Accept: "application/json" } });
   } catch (e) {
     throw new TicketmasterError(
-      `Network error reaching Ticketmaster: ${(e as Error).message}`,
+      `Network error reaching Ticketmaster: ${redact((e as Error).message, key)}`,
     );
   }
 
@@ -73,10 +80,12 @@ async function tmFetch(
     );
   }
   if (!res.ok) {
+    // Redact before surfacing: TM's Discovery API can echo the apikey back in
+    // some error envelopes (e.g. malformed-request 400s). Log the full body to
+    // stderr for debugging; never let it reach the chat surface.
     const body = await res.text().catch(() => "");
-    throw new TicketmasterError(
-      `Ticketmaster returned HTTP ${res.status}. ${body.slice(0, 160)}`.trim(),
-    );
+    console.error(`Ticketmaster HTTP ${res.status}: ${redact(body.slice(0, 500), key)}`);
+    throw new TicketmasterError(`Ticketmaster returned HTTP ${res.status}.`);
   }
   return res.json();
 }
@@ -129,7 +138,7 @@ function normalizeEvent(e: any): Concert {
     priceMax: typeof price?.max === "number" && price.max > 0 ? price.max : null,
     currency: price?.currency ?? null,
     availability: mapStatus(e?.dates?.status?.code),
-    url: e?.url ?? null,
+    url: safeUrl(e?.url),
     ageRestriction: e?.ageRestrictions?.legalAgeEnforced
       ? "Age restriction enforced (details not listed)"
       : null,

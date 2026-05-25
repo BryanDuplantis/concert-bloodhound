@@ -52,6 +52,13 @@ export function formatResults(concerts: Concert[], header: string): string {
   if (concerts.length === 0) return header;
   const body = concerts.map((c, i) => formatConcert(c, i + 1)).join("\n\n");
   const sources = [...new Set(concerts.map((c) => c.source))];
-  const attribution = sources.length === 1 ? `Source: ${sources[0]}` : `Sources: ${sources.join(", ")}`;
-  return `${header}\n\n${body}\n\n${attribution}`;
+  // JamBase's API terms require explicit "Powered by JamBase" attribution. Render
+  // it on its own line and keep it out of the generic Source(s) list.
+  const others = sources.filter((s) => s !== "JamBase");
+  const lines: string[] = [];
+  if (others.length) {
+    lines.push(others.length === 1 ? `Source: ${others[0]}` : `Sources: ${others.join(", ")}`);
+  }
+  if (sources.includes("JamBase")) lines.push("Powered by JamBase");
+  return `${header}\n\n${body}\n\n${lines.join("\n")}`;
 }

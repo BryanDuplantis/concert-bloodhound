@@ -1,25 +1,43 @@
 @~/.claude/CLAUDE.md
 
 ---
-## ✅ JamBase — root cause RESOLVED 2026-05-25 (was a client v1→v3 migration gap)
-The two-day "blocked" JamBase saga was **our bug, not JamBase's.** Two earlier
-diagnoses (5/23 "account-side provisioning", 5/25 "backend bug → support ticket")
-were BOTH reached without reading the vendor's API docs — and both wrong. Real cause:
-the client never migrated to the v3 Data API. **Proven fixed 5/25**: a correct v3
-request returns 40 real Atlanta events incl. the free Atlanta Jazz Festival.
+## ✅ JamBase 2nd source — SHIPPED & LIVE 2026-05-25 (v3 migration + search_concerts wireup)
+The two-day "blocked" saga was **our bug, not JamBase's** — the client never migrated
+to the v3 Data API (two earlier diagnoses, "account-side provisioning" and "backend
+bug → support ticket", were both reached without reading the vendor docs, both wrong).
+Now fully migrated and merged into `search_concerts`. Positive signal confirmed:
+`npm run smoke:jambase` → 40 dated Atlanta events (Jazz Festival #1); `npm run
+smoke:mcp` → the free Atlanta Jazz Festival surfaces in a live Atlanta search with
+`Powered by JamBase` attribution — the exact TM coverage hole, closed.
 
-**Working recipe** (full detail + event shape in `BACKLOG.md`):
-- Origin `https://api.data.jambase.com/v3` · auth `Authorization: Bearer <key>` ·
-  send `Accept`+`User-Agent` · two-step geo (`/geographies/metros` → `geoMetroId` →
-  `/events?geoMetroId=jambase:10`) · NO `perPage` query param (use `?page=N`).
-- Support ticket is **obsolete/do-not-send** (`docs/jambase-support-ticket.md`).
-- **Lesson logged:** read the vendor's current API docs BEFORE theorizing about why
-  auth fails — a control test proves the key is unrecognized but NOT *why*.
+**What's live:**
+- `src/jambase.ts` — v3 client: origin `https://api.data.jambase.com/v3`, auth
+  `Authorization: Bearer <key>` (+ `Accept`/`User-Agent`), two-step geo via the
+  `JAMBASE_METROS` map (`atlanta → jambase:10`; add new metros from
+  `/geographies/metros`). `normalizeJamBaseEvent` validated vs the live shape
+  (festival name headlines; ISO/date-only split; **headliner-only genre**, never
+  borrowed from openers; empty `priceSpecification` → null price; `e.url` link).
+- `search_concerts` (`src/index.ts`) — fetches TM + JamBase + feeds in parallel via
+  `Promise.allSettled` (any source can fail without breaking the others); merges
+  priority TM > JamBase > feeds, deduped on **artist|date** (NOT venue — sources
+  format the same room irreconcilably, e.g. "Tabernacle"/"The Tabernacle",
+  "District - GA"/"District Atlanta"; a touring act can't be two places a day).
+  Results are trimmed to the requested window by local date (`applyDateWindow`),
+  fixing a TM UTC-midnight boundary leak. JamBase fires for any mapped metro; under
+  a `genre` filter it honors the request itself (matching the headliner's tags and
+  relabeling to the matched tag), so it's genre-aware. Feeds gate off under genre.
+- `src/format.ts` — `Powered by JamBase` on its own attribution line when present.
+- `src/jambase.test.ts` (offline normalizer + genre-match guards) + `src/smoke-jambase.ts`
+  (live). Old exploratory `src/jambase-discovery.ts` retired. Support ticket obsolete.
 
-**Remaining (the actual wireup):** migrate `src/jambase.ts` to the recipe above,
-re-validate `normalizeJamBaseEvent` against the live shape, and merge JamBase into
-`search_concerts` (parallel w/ TM, dedupe, "Powered by JamBase" attribution). The
-positive signal is `npm run smoke:jambase` returning a real dated Atlanta event.
+**Backlog (not blocking):** (1) artist-NAME divergence between sources ("mgk" vs
+"Machine Gun Kelly") can slip a dupe — deliberately NOT fixed: fuzzy artist matching
+risks merging distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain.
+(2) Date window: TM can still omit a late-night show on the window's LAST local day
+(its UTC end cuts off before local midnight) — needs a tz-aware query, not just the
+client trim. (3) Genre-aware JamBase only scans page-1 events and won't bridge
+taxonomy gaps (a "R&B" request misses "rhythm-and-blues-soul"). **Lesson logged:**
+read the vendor's current API docs BEFORE theorizing about why auth fails.
 ---
 
 # Concert Bloodhound — Project Conventions
@@ -36,23 +54,30 @@ links. Every field flows from the API; absent fields render as "… not listed" 
 these. If a future source can't confirm a field, surface the gap — don't fill it.
 
 ## Architecture
-- `src/index.ts` — MCP server; registers the three tools. Orchestrates TM + feeds.
+- `src/index.ts` — MCP server; registers the three tools. `search_concerts`
+  orchestrates TM + JamBase + feeds in parallel (`Promise.allSettled`).
 - `src/ticketmaster.ts` — Discovery API client + event/venue normalization. The api
   key is attached here and never logged.
+- `src/jambase.ts` — JamBase Data API **v3** client (Bearer auth, `geoMetroId` geo
+  model) + normalizer. Second source for `search_concerts`; closes the free-festival
+  / civic hole TM's catalog misses (e.g. the Atlanta Jazz Festival). Key never logged.
 - `src/feeds/` — federated open-feed layer (`ical.ts` parser, `registry.ts` metro→
   source map, `index.ts` fetch/cache/normalize). Closes the long-tail (free civic/
   indie shows) TM misses, on demand, without leaving the stateless model.
-- **Network invariant:** I/O is isolated to `ticketmaster.ts` and `feeds/*` (the
-  source clients). No other module fetches — `geo.ts`, `merge.ts`, `format.ts`,
-  `types.ts` are all pure.
+- **Network invariant:** I/O is isolated to the source clients — `ticketmaster.ts`,
+  `jambase.ts`, and `feeds/*`. No other module fetches — `geo.ts`, `merge.ts`,
+  `format.ts`, `types.ts` are all pure.
 - `src/geo.ts` — PURE city→latlong metro table + resolver (+ nearest-metro). Lets a
   `city` search auto-upgrade to a geospatial `latlong`+`radius` query, and tags the
   resolved metro key so feeds for that metro are picked up.
-- `src/merge.ts` — PURE result shaping: TM↔feed dedup, date sort, max-price filter.
+- `src/merge.ts` — PURE result shaping: cross-source dedup (artist|date),
+  date sort, max-price filter.
 - `src/types.ts` — Zod `Concert` schema = the typed output contract.
-- `src/format.ts` — pure formatters (price/date/time/result + source attribution).
-- `src/smoke.ts`, `src/smoke-mcp.ts`, `src/smoke-feeds.ts` — live verification
-  harnesses (exit non-zero on failure). Unit tests: `*.test.ts` via `npm test`.
+- `src/format.ts` — pure formatters (price/date/time/result + source attribution,
+  incl. the required `Powered by JamBase` line).
+- `src/smoke.ts`, `src/smoke-mcp.ts`, `src/smoke-feeds.ts`, `src/smoke-jambase.ts` —
+  live verification harnesses (exit non-zero on failure). Unit tests: `*.test.ts`
+  via `npm test`.
 
 ## Tools
 - `search_concerts` — city / genre / date range / max price.
@@ -66,16 +91,23 @@ used the `city` text param is dropped (it would narrow back to the city proper).
 Coordinate resolution mirrors how relative dates are handled — the calling
 assistant can pass `latlong` for any city not in the built-in table.
 
-`search_concerts` also merges open-feed listings for a resolved metro (Atlanta has
-Cobb Travel & Tourism live; see `src/feeds/registry.ts`) — deduped against TM,
-attributed per source. Feeds are skipped when a `genre` filter is set (they carry
-no per-event genre). A TM outage degrades to feed-only rather than failing.
+`search_concerts` also merges JamBase + open-feed listings for a resolved metro
+(Atlanta has JamBase `jambase:10` and Cobb Travel & Tourism live; see
+`src/jambase.ts` `JAMBASE_METROS` and `src/feeds/registry.ts`) — deduped against TM
+(which wins on price + ticket links) and attributed per source (`Powered by
+JamBase`). Under a `genre` filter, feeds are skipped (they carry no genre) but
+JamBase stays in, matching the headliner's tags (never guessing) — this even
+recovers genre-relevant shows TM's stricter single-classification excludes (e.g.
+Death Angel, which TM files under Metal, surfaces under a Rock search). Every source
+is fetched independently, so any one failing — including a TM outage — degrades
+gracefully instead of failing.
 
 ## Secrets
-`TICKETMASTER_API_KEY` lives only in `.env` (gitignored). Never commit it, never
-echo it, never pass it as a CLI arg that lands in shell history. Local runs load
-it via `node --env-file=.env`; Claude integration passes it via the mcpServers
-`env` block.
+`TICKETMASTER_API_KEY` and `JAMBASE_API_KEY` live only in `.env` (gitignored). Never
+commit them, never echo them, never pass them as a CLI arg that lands in shell
+history. The JamBase key is a Bearer token — attached only in `jambase.ts` and
+redacted from every error. Local runs load `.env` via `node --env-file=.env`; Claude
+integration passes them via the mcpServers `env` block.
 
 ## Verification — the positive signal
 "Done" is NOT `tsc` exiting 0. Done is `npm run smoke:mcp` returning real, dated
