@@ -3,12 +3,31 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
+import { resolveLatLong, isLatLong } from "./geo.js";
 import { resultShape, type Concert } from "./types.js";
 import { formatResults } from "./format.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const toStart = (d?: string) => (d ? `${d}T00:00:00Z` : undefined);
 const toEnd = (d?: string) => (d ? `${d}T23:59:59Z` : undefined);
+
+/** Default metro radius when a city resolves to coordinates. */
+const DEFAULT_RADIUS_MI = 30;
+
+/**
+ * Decide whether to search geospatially. An explicit `latlong` wins; otherwise a
+ * known metro name resolves to its centroid. Returns the coordinates plus an
+ * optional display label, or null to fall back to Ticketmaster's `city` text
+ * match (so unknown cities behave exactly as before).
+ */
+function resolveGeo(
+  latlong: string | undefined,
+  city: string | undefined,
+): { latlong: string; label?: string } | null {
+  if (latlong && isLatLong(latlong)) return { latlong: latlong.trim() };
+  const metro = resolveLatLong(city);
+  return metro ? { latlong: metro.latlong, label: metro.label } : null;
+}
 
 /**
  * Drop events whose listed minimum exceeds the budget. Events with no listed
@@ -50,7 +69,8 @@ server.registerTool(
       "availability, or links; absent fields are reported as 'not listed'. Resolve relative dates (e.g. 'this weekend') " +
       "to startDate/endDate before calling.",
     inputSchema: {
-      city: z.string().optional().describe("City name, e.g. 'Chicago'"),
+      city: z.string().optional().describe("City name, e.g. 'Chicago'. Major US metros auto-resolve to a geospatial search covering the whole metro (suburbs included)."),
+      latlong: z.string().optional().describe("Geospatial center as 'lat,long' (e.g. '33.749,-84.388'). Use for cities outside the built-in metro list; overrides city and gives true metro-wide coverage with radius."),
       stateCode: z.string().length(2).optional().describe("US two-letter state code, e.g. 'IL'"),
       countryCode: z.string().length(2).optional().describe("Two-letter country code; defaults to US"),
       genre: z.string().optional().describe("Genre/classification, e.g. 'Rock', 'Jazz', 'Hip-Hop'"),
@@ -58,32 +78,36 @@ server.registerTool(
       startDate: z.string().regex(DATE_RE).optional().describe("Earliest date, YYYY-MM-DD"),
       endDate: z.string().regex(DATE_RE).optional().describe("Latest date, YYYY-MM-DD"),
       maxPrice: z.number().positive().optional().describe("Max ticket price; events with a higher listed minimum are excluded"),
-      radius: z.number().positive().optional().describe("Search radius in miles around the city"),
+      radius: z.number().positive().optional().describe("Search radius in miles around the city/coords (defaults to 30 when a metro or latlong is used)"),
       size: z.number().int().min(1).max(50).optional().describe("Results to return (default 10)"),
     },
     outputSchema: resultShape,
     annotations: readOnly,
   },
   async (args) => {
-    if (!args.city && !args.stateCode && !args.keyword) {
-      return fail("Please provide a location to search: a city, a state code, or a keyword.");
+    if (!args.city && !args.stateCode && !args.keyword && !args.latlong) {
+      return fail("Please provide a location to search: a city, a state code, coordinates, or a keyword.");
     }
     const want = args.size ?? 10;
     const fetchSize = args.maxPrice != null ? Math.min(Math.max(want * 2, 20), 50) : want;
+    const geo = resolveGeo(args.latlong, args.city);
     try {
       const raw = await searchEvents({
-        city: args.city,
+        // Geospatial wins: coords + radius cover the whole metro, so the city
+        // text match is dropped — keeping it would narrow back to the city proper.
+        city: geo ? undefined : args.city,
+        latlong: geo?.latlong,
+        radius: geo ? (args.radius ?? DEFAULT_RADIUS_MI) : args.radius,
         stateCode: args.stateCode,
         countryCode: args.countryCode,
         classificationName: args.genre,
         keyword: args.keyword,
         startDateTime: toStart(args.startDate),
         endDateTime: toEnd(args.endDate),
-        radius: args.radius,
         size: fetchSize,
       });
       const results = applyMaxPrice(raw, args.maxPrice).slice(0, want);
-      const where = args.city ?? args.stateCode ?? "your search";
+      const where = geo?.label ?? args.city ?? args.stateCode ?? "your search";
 
       if (results.length === 0) {
         return ok(
@@ -116,12 +140,14 @@ server.registerTool(
       "Real listings only — absent fields are reported as 'not listed'.",
     inputSchema: {
       artist: z.string().min(1).describe("Artist or band name"),
-      city: z.string().optional().describe("Optional city to focus the search"),
+      city: z.string().optional().describe("Optional city to focus the search. Major US metros auto-resolve to a metro-wide geospatial search."),
+      latlong: z.string().optional().describe("Geospatial center as 'lat,long'; overrides city for metro-wide coverage."),
       stateCode: z.string().length(2).optional(),
       countryCode: z.string().length(2).optional().describe("Defaults to US"),
       startDate: z.string().regex(DATE_RE).optional().describe("Earliest date, YYYY-MM-DD"),
       endDate: z.string().regex(DATE_RE).optional().describe("Latest date, YYYY-MM-DD"),
       maxPrice: z.number().positive().optional(),
+      radius: z.number().positive().optional().describe("Search radius in miles around the city/coords (defaults to 30 when a metro or latlong is used)"),
       size: z.number().int().min(1).max(50).optional().describe("Results to return (default 10)"),
     },
     outputSchema: resultShape,
@@ -129,10 +155,14 @@ server.registerTool(
   },
   async (args) => {
     const want = args.size ?? 10;
+    const geo = resolveGeo(args.latlong, args.city);
+    const near = geo?.label ?? args.city;
     try {
       const raw = await searchEvents({
         keyword: args.artist,
-        city: args.city,
+        city: geo ? undefined : args.city,
+        latlong: geo?.latlong,
+        radius: geo ? (args.radius ?? DEFAULT_RADIUS_MI) : args.radius,
         stateCode: args.stateCode,
         countryCode: args.countryCode,
         startDateTime: toStart(args.startDate),
@@ -145,7 +175,7 @@ server.registerTool(
             results.length === 1 ? "" : "s"
           }:`
         : `I didn't find upcoming ${args.artist} concerts${
-            args.city ? ` near ${args.city}` : ""
+            near ? ` near ${near}` : ""
           }. They may not be touring that window, or the dates aren't on Ticketmaster yet.`;
       return ok(results, summary);
     } catch (e) {

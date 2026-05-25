@@ -5,6 +5,25 @@ not blocking it.
 
 ---
 
+## Web-app pivot — multi-source federated aggregator (NOT YET STARTED)
+_Referenced by `docs/atlanta-source-map.md` but not tracked here until now (2026-05-25)._
+
+The on-demand MCP nails "what's <artist> doing near me" but structurally misses
+the long tail — free civic series, university recitals, indie/DIY venues, and the
+free Atlanta Jazz Festival. The map's core finding: that tail lives in open
+iCal/RSS/JSON feeds (Trumba, Localist, venue RSS), not ticketing APIs — which
+favors a **background-fetch model** (poll feeds on a schedule into a local store)
+over pure on-demand, i.e. a small web app rather than (or alongside) the MCP.
+
+- **Build-order spec:** `docs/atlanta-source-map.md` — Tier 1 (clean open feeds),
+  Tier 2 (tiny static HTML), plus the verified dead-ends list.
+- **Vision mock:** `atlanta-this-weekend.html` is a hand-built mock of the digest
+  output — there is no generator for it yet.
+- **Independent of the JamBase blocker** (these feeds need no JamBase key).
+- Not scoped/phased — write a phased plan before building.
+
+---
+
 ## JamBase 2nd source — BLOCKED on JamBase-side key provisioning
 _Parked 2026-05-23. Scaffolded & committed (`daa4da4`); NOT wired into the live tools._
 

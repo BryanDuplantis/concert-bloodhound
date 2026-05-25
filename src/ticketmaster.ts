@@ -8,6 +8,8 @@ export class TicketmasterError extends Error {}
 export interface SearchParams {
   keyword?: string;
   city?: string;
+  /** "lat,long" centroid for a geospatial (metro-wide) search; pairs with radius. */
+  latlong?: string;
   stateCode?: string;
   countryCode?: string;
   classificationName?: string;
@@ -140,6 +142,7 @@ export async function searchEvents(p: SearchParams): Promise<Concert[]> {
   const data = await tmFetch("events.json", {
     keyword: p.keyword,
     city: p.city,
+    latlong: p.latlong,
     stateCode: p.stateCode,
     countryCode: p.countryCode ?? "US",
     classificationName: p.classificationName,

@@ -18,6 +18,17 @@ Drop it into any Claude surface (Claude Code, Claude Desktop) and ask:
 | `search_by_artist` | Upcoming shows for an artist, optionally near a city |
 | `search_by_venue`  | Looks a venue up by name, then lists its upcoming events |
 
+### Location coverage
+
+For `search_concerts` and `search_by_artist`, a city in the built-in metro list
+(most major US metros) resolves to its coordinates and is searched as a
+`latlong` + `radius` (default 30 mi) query — so "Atlanta" returns the whole
+**metro** (suburban venues like Peachtree City, Marietta, and the Cobb venues
+included), not just venues whose listing text reads "Atlanta". Cities outside the
+list fall back to a plain city text match; pass an explicit `latlong`
+(e.g. `"33.749,-84.388"`) to force metro coverage for any city. Like relative
+dates, coordinate resolution can also be done by the calling assistant.
+
 ## Setup
 
 ### 1. Get a free Ticketmaster API key
@@ -90,7 +101,8 @@ secret lands in shell history.
 ## Limitations (v0.1, MVP)
 
 - Single source (Ticketmaster). Indie/DIY shows not listed there won't appear.
-- US-centric defaults (`countryCode` defaults to `US`; override per call).
+- US-centric defaults (`countryCode` defaults to `US`; override per call). Built-in
+  metro coordinate resolution covers major US metros only; elsewhere, pass `latlong`.
 - Relative dates ("this weekend") are resolved by the *calling* assistant into
   `startDate`/`endDate`, not by the server.
 - No resale pricing, seat maps, or fine-grained inventory.

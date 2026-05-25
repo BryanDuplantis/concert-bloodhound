@@ -31,6 +31,9 @@ these. If a future source can't confirm a field, surface the gap — don't fill 
 - `src/index.ts` — MCP server; registers the three tools. Filtering/summary logic.
 - `src/ticketmaster.ts` — Discovery API client + event/venue normalization. The
   ONLY module that touches the network. The api key is attached here and never logged.
+- `src/geo.ts` — PURE city→latlong metro table + resolver. No network (preserves
+  the single-network-module invariant). Lets a `city` search auto-upgrade to a
+  geospatial `latlong`+`radius` query for true metro coverage.
 - `src/types.ts` — Zod `Concert` schema = the typed output contract.
 - `src/format.ts` — pure formatters (price/date/time/result). No I/O.
 - `src/smoke.ts`, `src/smoke-mcp.ts` — verification harnesses (exit non-zero on failure).
@@ -39,6 +42,13 @@ these. If a future source can't confirm a field, surface the gap — don't fill 
 - `search_concerts` — city / genre / date range / max price.
 - `search_by_artist` — artist (+ optional location / dates / price).
 - `search_by_venue` — venue lookup → its upcoming events.
+
+`search_concerts` and `search_by_artist` resolve a known metro (or an explicit
+`latlong`) to a geospatial `latlong`+`radius` search (default 30 mi) covering the
+whole metro; unknown cities fall back to the `city` text match. When coords are
+used the `city` text param is dropped (it would narrow back to the city proper).
+Coordinate resolution mirrors how relative dates are handled — the calling
+assistant can pass `latlong` for any city not in the built-in table.
 
 ## Secrets
 `TICKETMASTER_API_KEY` lives only in `.env` (gitignored). Never commit it, never
