@@ -5,6 +5,39 @@ not blocking it.
 
 ---
 
+## Cross-surface access — Mac/Claude-Code only today (NOT scoped, 2026-05-25)
+The server is **stdio** (`StdioServerTransport`, registered `type:stdio` in user-scope
+`~/.claude.json`), i.e. a local Node child process Claude Code spawns on the Mac. So
+**all queries originate in a Claude Code session on the Mac** — there is no iOS / web /
+claude.ai path, and none was built. To reach it from the iOS Claude app you'd need to:
+(1) add an HTTP transport (stdio-only today); (2) host it at a **publicly-reachable**
+HTTPS endpoint — note claude.ai connectors are server-side, so a private Tailscale
+`*.ts.net` URL would NOT work the way it does for brain-mcp in Claude Code; needs a real
+public endpoint (Cloudflare Tunnel / hosted box) **plus auth**; (3) register it as a
+claude.ai custom connector (propagates to iOS); (4) move the API keys server-side (they
+live in the local `.env` via the stdio env-file today). Going public also sharpens the
+security posture — see the prompt-injection / key-handling residuals below. Not scoped;
+boundary recorded only.
+
+## Security review residuals (2026-05-25) — non-blocking hardening
+Full `/security_review` run: **0 Critical / 0 High / 3 Medium / 4 Low**, 5 categories
+clean. The two reachable issues are **FIXED & committed in `6baeb36`**: M1 (TM error
+path could echo the apikey to the chat surface → `redact()` + stderr-only body) and L1
+(`url` accepted any scheme → `safeUrl()` https/http allowlist in all three normalizers).
+Remaining recommendations, not auto-applied:
+- **M2 — supply chain.** Deps are caret-ranged; `npm audit` clean today. Use `npm ci`
+  (lockfile-exact) in any install/CI context, and consider pinning `@modelcontextprotocol/sdk`
+  to an exact version (it's the trust-critical dep that sees every tool arg).
+- **M3 — prompt injection via upstream concert data.** Event names / artists / feed
+  summaries are attacker-influenceable free text flowing verbatim into the LLM context.
+  Cheap mitigation: strip control chars + cap field length in the normalizers, and/or a
+  short "untrusted external data" preamble in tool output. Zod validates shape, not content.
+- **L3/L4 — awareness only.** `nearestMetroKey` `?? 0` fallback (trusted table data);
+  `jbGet`/`tmFetch` path arg would allow base-URL escape IF ever made dynamic (not
+  reachable today — all callers pass hardcoded literals).
+
+---
+
 ## Open-feed federated source — Phase 1 SHIPPED (2026-05-25); Phase 2/3 backlog
 On-demand, stateless open-feed layer, live and merged into `search_concerts`.
 
