@@ -3,7 +3,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
-import { resolveLatLong, isLatLong } from "./geo.js";
+import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
+import { fetchMetroFeeds } from "./feeds/index.js";
+import { applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
 import { resultShape, type Concert } from "./types.js";
 import { formatResults } from "./format.js";
 
@@ -23,20 +25,13 @@ const DEFAULT_RADIUS_MI = 30;
 function resolveGeo(
   latlong: string | undefined,
   city: string | undefined,
-): { latlong: string; label?: string } | null {
-  if (latlong && isLatLong(latlong)) return { latlong: latlong.trim() };
+): { latlong: string; label?: string; metroKey?: string } | null {
+  if (latlong && isLatLong(latlong)) {
+    const ll = latlong.trim();
+    return { latlong: ll, metroKey: nearestMetroKey(ll) ?? undefined };
+  }
   const metro = resolveLatLong(city);
-  return metro ? { latlong: metro.latlong, label: metro.label } : null;
-}
-
-/**
- * Drop events whose listed minimum exceeds the budget. Events with no listed
- * price are kept (we can't confirm they're over budget) and flagged downstream
- * — honoring the spec's "don't invent, don't silently exclude" rule.
- */
-function applyMaxPrice(concerts: Concert[], maxPrice?: number): Concert[] {
-  if (maxPrice == null) return concerts;
-  return concerts.filter((c) => c.priceMin == null || c.priceMin <= maxPrice);
+  return metro ? { latlong: metro.latlong, label: metro.label, metroKey: metro.key } : null;
 }
 
 function errMsg(e: unknown): string {
@@ -91,8 +86,13 @@ server.registerTool(
     const want = args.size ?? 10;
     const fetchSize = args.maxPrice != null ? Math.min(Math.max(want * 2, 20), 50) : want;
     const geo = resolveGeo(args.latlong, args.city);
+
+    // Ticketmaster is the backbone; a TM outage shouldn't suppress open-feed
+    // results, so capture its error rather than throwing the whole call.
+    let tm: Concert[] = [];
+    let tmError: string | null = null;
     try {
-      const raw = await searchEvents({
+      tm = await searchEvents({
         // Geospatial wins: coords + radius cover the whole metro, so the city
         // text match is dropped — keeping it would narrow back to the city proper.
         city: geo ? undefined : args.city,
@@ -106,28 +106,46 @@ server.registerTool(
         endDateTime: toEnd(args.endDate),
         size: fetchSize,
       });
-      const results = applyMaxPrice(raw, args.maxPrice).slice(0, want);
-      const where = geo?.label ?? args.city ?? args.stateCode ?? "your search";
-
-      if (results.length === 0) {
-        return ok(
-          results,
-          `I didn't find concerts matching that search in ${where}. ` +
-            `Try widening the dates, raising the price cap, a nearby city, or a different genre.`,
-        );
-      }
-      const unknownPrice =
-        args.maxPrice != null ? results.filter((c) => c.priceMin == null).length : 0;
-      let summary = `Here ${results.length === 1 ? "is" : "are"} ${results.length} concert${
-        results.length === 1 ? "" : "s"
-      } in ${where}:`;
-      if (unknownPrice > 0) {
-        summary += ` (${unknownPrice} have no listed price and were kept rather than filtered out.)`;
-      }
-      return ok(results, summary);
     } catch (e) {
-      return fail(errMsg(e));
+      tmError = errMsg(e);
     }
+
+    // Open feeds augment a resolved metro. Skipped when a genre filter is set —
+    // the feeds carry no per-event genre, so we can't honor it without guessing.
+    let merged = tm;
+    let feedCount = 0;
+    if (geo?.metroKey && !args.genre) {
+      const feedEvents = await fetchMetroFeeds(geo.metroKey, {
+        start: args.startDate,
+        end: args.endDate,
+      });
+      feedCount = feedEvents.length;
+      merged = mergeConcerts(tm, feedEvents);
+    }
+
+    if (tmError && merged.length === 0) return fail(tmError);
+
+    const results = applyMaxPrice(merged, args.maxPrice).sort(byDateAsc).slice(0, want);
+    const where = geo?.label ?? args.city ?? args.stateCode ?? "your search";
+
+    if (results.length === 0) {
+      return ok(
+        results,
+        `I didn't find concerts matching that search in ${where}. ` +
+          `Try widening the dates, raising the price cap, a nearby city, or a different genre.`,
+      );
+    }
+    const unknownPrice =
+      args.maxPrice != null ? results.filter((c) => c.priceMin == null).length : 0;
+    let summary = `Here ${results.length === 1 ? "is" : "are"} ${results.length} concert${
+      results.length === 1 ? "" : "s"
+    } in ${where}:`;
+    if (tmError && feedCount > 0) {
+      summary += " (Ticketmaster was unreachable — showing open-feed listings only.)";
+    } else if (unknownPrice > 0) {
+      summary += ` (${unknownPrice} have no listed price and were kept rather than filtered out.)`;
+    }
+    return ok(results, summary);
   },
 );
 

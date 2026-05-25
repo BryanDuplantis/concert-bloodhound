@@ -51,5 +51,7 @@ export function formatConcert(c: Concert, idx: number): string {
 export function formatResults(concerts: Concert[], header: string): string {
   if (concerts.length === 0) return header;
   const body = concerts.map((c, i) => formatConcert(c, i + 1)).join("\n\n");
-  return `${header}\n\n${body}\n\nSource: Ticketmaster`;
+  const sources = [...new Set(concerts.map((c) => c.source))];
+  const attribution = sources.length === 1 ? `Source: ${sources[0]}` : `Sources: ${sources.join(", ")}`;
+  return `${header}\n\n${body}\n\n${attribution}`;
 }

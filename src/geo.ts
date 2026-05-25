@@ -94,13 +94,53 @@ export function isLatLong(s: string): boolean {
   return /^-?\d{1,3}(\.\d+)?,\s*-?\d{1,3}(\.\d+)?$/.test(s.trim());
 }
 
+/** A resolved metro: its centroid plus the canonical table key (for feed lookup). */
+export interface ResolvedMetro extends MetroPoint {
+  key: string;
+}
+
 /**
  * Resolve a city name to a metro centroid, or null if it isn't in the table.
  * Null is the signal to fall back to Ticketmaster's `city` text match.
  */
-export function resolveLatLong(city: string | undefined): MetroPoint | null {
+export function resolveLatLong(city: string | undefined): ResolvedMetro | null {
   if (!city) return null;
   const key = normalize(city);
   const canonical = ALIASES[key] ?? key;
-  return METROS[canonical] ?? null;
+  const entry = METROS[canonical];
+  return entry ? { key: canonical, ...entry } : null;
+}
+
+/** Great-circle distance in miles between two [lat, lon] points. */
+function haversineMi(a: [number, number], b: [number, number]): number {
+  const R = 3958.8;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b[0] - a[0]);
+  const dLon = toRad(b[1] - a[1]);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Given explicit "lat,long" coordinates, find the canonical metro key whose
+ * centroid is within `maxMi`, or null. Lets a latlong search still pick up that
+ * metro's open feeds.
+ */
+export function nearestMetroKey(latlong: string, maxMi = 40): string | null {
+  if (!isLatLong(latlong)) return null;
+  const [lat, lon] = latlong.split(",").map((s) => parseFloat(s.trim()));
+  if (lat === undefined || lon === undefined || Number.isNaN(lat) || Number.isNaN(lon)) return null;
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const [key, p] of Object.entries(METROS)) {
+    const [plat, plon] = p.latlong.split(",").map(Number);
+    const d = haversineMi([lat, lon], [plat ?? 0, plon ?? 0]);
+    if (d < bestD) {
+      bestD = d;
+      best = key;
+    }
+  }
+  return bestD <= maxMi ? best : null;
 }

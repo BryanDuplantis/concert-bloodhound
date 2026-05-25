@@ -28,15 +28,23 @@ links. Every field flows from the API; absent fields render as "… not listed" 
 these. If a future source can't confirm a field, surface the gap — don't fill it.
 
 ## Architecture
-- `src/index.ts` — MCP server; registers the three tools. Filtering/summary logic.
-- `src/ticketmaster.ts` — Discovery API client + event/venue normalization. The
-  ONLY module that touches the network. The api key is attached here and never logged.
-- `src/geo.ts` — PURE city→latlong metro table + resolver. No network (preserves
-  the single-network-module invariant). Lets a `city` search auto-upgrade to a
-  geospatial `latlong`+`radius` query for true metro coverage.
+- `src/index.ts` — MCP server; registers the three tools. Orchestrates TM + feeds.
+- `src/ticketmaster.ts` — Discovery API client + event/venue normalization. The api
+  key is attached here and never logged.
+- `src/feeds/` — federated open-feed layer (`ical.ts` parser, `registry.ts` metro→
+  source map, `index.ts` fetch/cache/normalize). Closes the long-tail (free civic/
+  indie shows) TM misses, on demand, without leaving the stateless model.
+- **Network invariant:** I/O is isolated to `ticketmaster.ts` and `feeds/*` (the
+  source clients). No other module fetches — `geo.ts`, `merge.ts`, `format.ts`,
+  `types.ts` are all pure.
+- `src/geo.ts` — PURE city→latlong metro table + resolver (+ nearest-metro). Lets a
+  `city` search auto-upgrade to a geospatial `latlong`+`radius` query, and tags the
+  resolved metro key so feeds for that metro are picked up.
+- `src/merge.ts` — PURE result shaping: TM↔feed dedup, date sort, max-price filter.
 - `src/types.ts` — Zod `Concert` schema = the typed output contract.
-- `src/format.ts` — pure formatters (price/date/time/result). No I/O.
-- `src/smoke.ts`, `src/smoke-mcp.ts` — verification harnesses (exit non-zero on failure).
+- `src/format.ts` — pure formatters (price/date/time/result + source attribution).
+- `src/smoke.ts`, `src/smoke-mcp.ts`, `src/smoke-feeds.ts` — live verification
+  harnesses (exit non-zero on failure). Unit tests: `*.test.ts` via `npm test`.
 
 ## Tools
 - `search_concerts` — city / genre / date range / max price.
@@ -50,6 +58,11 @@ used the `city` text param is dropped (it would narrow back to the city proper).
 Coordinate resolution mirrors how relative dates are handled — the calling
 assistant can pass `latlong` for any city not in the built-in table.
 
+`search_concerts` also merges open-feed listings for a resolved metro (Atlanta has
+Cobb Travel & Tourism live; see `src/feeds/registry.ts`) — deduped against TM,
+attributed per source. Feeds are skipped when a `genre` filter is set (they carry
+no per-event genre). A TM outage degrades to feed-only rather than failing.
+
 ## Secrets
 `TICKETMASTER_API_KEY` lives only in `.env` (gitignored). Never commit it, never
 echo it, never pass it as a CLI arg that lands in shell history. Local runs load
@@ -59,4 +72,7 @@ it via `node --env-file=.env`; Claude integration passes it via the mcpServers
 ## Verification — the positive signal
 "Done" is NOT `tsc` exiting 0. Done is `npm run smoke:mcp` returning real, dated
 events over the stdio protocol. Run it after any change to the client or tools.
-`npm run build && npm run smoke:mcp` is the gate.
+`npm run build && npm run smoke:mcp` is the gate. For feed work, add
+`npm run smoke:feeds` (live open-feed music events). `npm test` runs the offline
+unit suite (geo resolver, merge/dedup, iCal parser) — fast logic guard, not a
+substitute for the live smokes.

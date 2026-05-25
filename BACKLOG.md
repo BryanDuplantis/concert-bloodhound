@@ -5,6 +5,33 @@ not blocking it.
 
 ---
 
+## Open-feed federated source — Phase 1 SHIPPED (2026-05-25); Phase 2/3 backlog
+On-demand, stateless open-feed layer, live and merged into `search_concerts`.
+
+**Shipped (Phase 1).** `src/feeds/` (iCal parser + registry + fetch/cache/normalize);
+Cobb Travel & Tourism iCal wired for the Atlanta metro, filtered to its own
+"Music & Concerts" category, deduped against TM, attributed per source, resilient to
+a TM outage. Verified: `npm run smoke:feeds` returns 7 live Cobb music events TM
+doesn't carry; merge + parser unit-tested.
+
+**Finding — Localist (GSU/KSU) is dead in summer.** University recital calendars
+publish near-term; in late May they return ~0 music events. `venue_id` filtering is
+also broken on the v2 API (returns `total=1`/`events:[]`). Revisit in fall (Aug+);
+filter by place id (GSU Kopleff `272271` / KSU Bailey `31678877210426`) via
+client-side venue-name match, NOT `keyword`/`search` (both return non-music noise).
+
+**Phase 2 (iCal expansion).** Battery ATL (108 live events) + Piedmont Park lack
+usable CATEGORIES — would need a SUMMARY keyword classifier (riskier; weigh against
+"never invent"). Cobb's pattern (trust the publisher's category) is the gold path.
+
+**Phase 3 (RSS).** Red Light Café, GA Tech Arts — adds an RSS/XML parser dep.
+
+**Refinement noted.** Cobb's "Music & Concerts" category is broad — includes musicals
+("Footloose"), comedy open mics, festivals alongside concerts. Honest (publisher's own
+category) but loose for a strict concert finder; consider a sub-filter if it proves noisy.
+
+---
+
 ## Web-app pivot — multi-source federated aggregator (NOT YET STARTED)
 _Referenced by `docs/atlanta-source-map.md` but not tracked here until now (2026-05-25)._
 

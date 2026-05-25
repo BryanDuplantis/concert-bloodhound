@@ -50,10 +50,12 @@ npm run build
 
 ### 4. Verify it works (the positive signal)
 ```bash
-npm run smoke       # direct API: real NYC events in the next 30 days
-npm run smoke:mcp   # full protocol: spawns the server, lists tools, returns live Chicago concerts
+npm run smoke       # direct API: real NYC events + an Atlanta metro geospatial search
+npm run smoke:mcp   # full protocol: spawns the server, lists tools, returns live concerts
+npm run smoke:feeds # open feeds: live Cobb (Atlanta) music events TM doesn't carry
+npm test            # offline unit suite: geo resolver, merge/dedup, iCal parser
 ```
-Both exit non-zero on failure — a green check means real events came back, not just rc=0.
+The smokes exit non-zero on failure — a green check means real events came back, not just rc=0.
 
 ## Use it in Claude
 
@@ -100,7 +102,10 @@ secret lands in shell history.
 
 ## Limitations (v0.1, MVP)
 
-- Single source (Ticketmaster). Indie/DIY shows not listed there won't appear.
+- Primary source is Ticketmaster. `search_concerts` also merges open civic/indie
+  feeds for metros that have them (currently Atlanta — Cobb Travel & Tourism, the
+  free/civic shows TM doesn't carry); other metros are TM-only until their feeds
+  are added. `search_by_artist`/`search_by_venue` stay TM-only.
 - US-centric defaults (`countryCode` defaults to `US`; override per call). Built-in
   metro coordinate resolution covers major US metros only; elsewhere, pass `latlong`.
 - Relative dates ("this weekend") are resolved by the *calling* assistant into

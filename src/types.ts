@@ -22,7 +22,10 @@ export const ConcertSchema = z.object({
   availability: z.string(), // mapped from the event's on-sale status
   url: z.string().nullable(),
   ageRestriction: z.string().nullable(),
-  source: z.enum(["Ticketmaster", "JamBase"]),
+  // Attribution label for where the listing came from — "Ticketmaster" or an
+  // open-feed source name (e.g. "Cobb Travel & Tourism"). A string, not an enum,
+  // so new federated sources don't require a schema change.
+  source: z.string(),
 });
 
 export type Concert = z.infer<typeof ConcertSchema>;
