@@ -13,6 +13,35 @@ of open APIs + publicly published iCal/RSS feeds, not a pile of ticketing APIs
 
 ---
 
+## Why federated — the structural argument
+
+Two distinct gaps make a single source insufficient, and they compound:
+
+1. **Coverage gap** — TM's catalog is bounded by what's TM-ticketed. Free civic
+   series, university recitals, DIY/indie rooms, and free festivals are
+   structurally absent from a TM search because they were never in TM's
+   database. The Atlanta Jazz Festival is the canonical example: a free,
+   high-profile Piedmont Park event TM literally does not carry, no matter
+   how the query is phrased. JamBase + Tier 1 open feeds close this.
+
+2. **Classification gap** — even when an act IS in TM's catalog, TM files it
+   under a single rigid genre. JamBase tags the same act with multiple
+   genres reflecting how the act is actually marketed. **Empirical case
+   (2026-05-25):** a `genre=Rock` search for Atlanta — Death Angel is in
+   TM's catalog but filed under Metal, so TM returns nothing. JamBase tags
+   the same act both metal AND rock and surfaces it. The user gets a
+   relevant result the primary source structurally couldn't produce.
+
+The Coverage gap argues for adding sources. The Classification gap argues
+that adding sources still pays off **even when the primary source has the
+data** — because the primary's taxonomy is its own search-time boundary.
+Together these say a federated concert search is not a long-tail luxury;
+it's the only design that returns relevant results consistently for either
+free events or genre-flexible acts. Everything below — Tier 1, Tier 2,
+the dead ends — is downstream of that.
+
+---
+
 ## Tier 1 — Clean to consume (open API or published feed, no legal gray)
 
 Build these first. Each is an open REST API or a publicly published iCal/RSS/JSON feed.
