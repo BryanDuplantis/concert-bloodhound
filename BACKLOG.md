@@ -32,6 +32,10 @@ Remaining recommendations, not auto-applied:
   summaries are attacker-influenceable free text flowing verbatim into the LLM context.
   Cheap mitigation: strip control chars + cap field length in the normalizers, and/or a
   short "untrusted external data" preamble in tool output. Zod validates shape, not content.
+  **Revisit-by (set 2026-05-25): event-gated — resolve BEFORE/WHEN HTTP transport for
+  iOS is added** (see cross-surface section above). Surface area is small while
+  stdio/Mac-only; going public sharpens it. M2 has no hard date but apply `npm ci` the
+  next time deps are installed. Don't let either sit undated and become wallpaper.
 - **L3/L4 — awareness only.** `nearestMetroKey` `?? 0` fallback (trusted table data);
   `jbGet`/`tmFetch` path arg would allow base-URL escape IF ever made dynamic (not
   reachable today — all callers pass hardcoded literals).
