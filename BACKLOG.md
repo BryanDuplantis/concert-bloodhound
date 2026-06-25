@@ -5,6 +5,43 @@ not blocking it.
 
 ---
 
+## Live-validation findings (2026-06-25) — surfaced testing the Red Light feed end-to-end
+
+Four items from a live test pass against the running server. **Only the first carries a
+correctness cost; the other three are feature/UX/honesty gaps with no wrong-output.**
+
+1. **[CORRECTNESS — highest] Intra-source duplicate survives the merge.** A Ticketmaster
+   relocation lists the SAME show twice (two event IDs) — e.g. smokedope2016 @ Tabernacle
+   2026-06-25 as "Moved to Tabernacle" (7pm) AND "Moved from Masquerade" (8pm). Both rows
+   survive because `mergeConcerts` dedups CROSS-source only (`mergeConcerts(mergeConcerts(tm,jb),feed)`);
+   two identical-artist|date rows WITHIN the TM array are never compared to each other. This
+   ships a genuinely wrong result (one show shown twice). Fix: dedup the TM array against
+   itself (or dedup the final merged set in one pass) on artist|date, keeping the earliest /
+   most-complete row. Distinct from the cross-source artist-order gap below — this is same
+   source, same artist string, and SHOULD collapse. Guard with a fixture test (two TM rows,
+   same artist|date, different event id/time → one survives).
+
+2. **[feature] No way to query a single open-feed venue.** `search_by_venue` is TM-only, so
+   open-feed venues (Red Light, Cobb) are unreachable except buried inside a merged
+   `search_concerts` (where the result cap crowds them out past the first ~2 days). A
+   "list events from source/venue X" path would make "what's on at Red Light" a one-call
+   answer. No correctness cost — just not addressable today.
+
+3. **[honesty] Feed-horizon under-representation is invisible.** An open-feed source with a
+   short rolling window (Red Light's Squarespace RSS = ~20 most-recent posts, currently
+   reaching only ~2026-06-30) is silently under-represented in a wide merged search — looks
+   like the venue goes quiet, when really the feed's horizon ended. Surface a per-source
+   "horizon ends MM/DD" signal so a thin tail reads as a feed limit, not an empty calendar.
+
+4. **[feature] Description / door-time / price are dropped.** The RSS description carries real
+   price ("$20 adv / $30 doors"), door time ("Doors @ 7 PM"), and genre hints ("Jazz Funk")
+   as free text — all surfaced as `null` today (Concert has no description field; door-time/
+   price parsing was deferred as fragile under "never invent"). Options: (a) pass the
+   HTML-stripped description through on a new optional field; (b) a careful, fixture-tested
+   door-time/price extractor. Honest-but-lossy today; the data exists in the feed.
+
+---
+
 ## Cross-surface access — Mac/Claude-Code only today (NOT scoped, 2026-05-25)
 The server is **stdio** (`StdioServerTransport`, registered `type:stdio` in user-scope
 `~/.claude.json`), i.e. a local Node child process Claude Code spawns on the Mac. So
