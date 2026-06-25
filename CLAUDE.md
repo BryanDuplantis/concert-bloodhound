@@ -53,6 +53,10 @@ links. Every field flows from the API; absent fields render as "… not listed" 
 "Price unavailable" / "Availability unknown". Do not add heuristics that guess
 these. If a future source can't confirm a field, surface the gap — don't fill it.
 
+Standing rule (2026-06-25): the open-feed layer never infers genre. Feed events
+carry `genre: null` and are gated out under a genre filter — same as Cobb. No
+SUMMARY classifier, no canonical vocab.
+
 ## Architecture
 - `src/index.ts` — MCP server; registers the three tools. `search_concerts`
   orchestrates TM + JamBase + feeds in parallel (`Promise.allSettled`).
