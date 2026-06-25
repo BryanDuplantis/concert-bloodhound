@@ -62,11 +62,29 @@ also broken on the v2 API (returns `total=1`/`events:[]`). Revisit in fall (Aug+
 filter by place id (GSU Kopleff `272271` / KSU Bailey `31678877210426`) via
 client-side venue-name match, NOT `keyword`/`search` (both return non-music noise).
 
-**Phase 2 (iCal expansion).** Battery ATL (108 live events) + Piedmont Park lack
-usable CATEGORIES — would need a SUMMARY keyword classifier (riskier; weigh against
-"never invent"). Cobb's pattern (trust the publisher's category) is the gold path.
+**Phase 2 (Battery ATL + Piedmont Park) — KILLED 2026-06-25 (recon), do NOT re-propose.**
+Live recon of both feeds (Battery Trumba `atlbrv.ics` 121 events / 12 distinct titles;
+Piedmont `piedmontpark.org` iCal 30 events) settled it: **these are amenity/lifestyle
+calendars, not concert feeds — no long-tail to capture.** Battery's "events" are jazz
+brunches (46×, a restaurant), Yappy Hour (dog), yoga, farmers markets, silent disco;
+Piedmont's are walking clubs, 5Ks, green markets, with exactly ONE genuine music event
+("44 Live Jazz Festival"). A SUMMARY classifier here can only stay silent (~95%
+`unclassified`, earns nothing) or invent concerts — surfacing a restaurant jazz brunch
+as a "Jazz concert" is the over-classification failure mode AND violates "never invent."
+CATEGORIES exist in both but are useless (location tag / "Conservancy Events", no genre).
+The classifier idea isn't wrong; the *sources* were. Don't resurrect Battery/Piedmont.
 
-**Phase 3 (RSS).** Red Light Café, GA Tech Arts — adds an RSS/XML parser dep.
+**Phase 3 (RSS) — NEXT, prerequisite RESOLVED.** Red Light Café, GA Tech Arts (actual
+music venues — the real long-tail) — adds an RSS/XML parser dep. **Genre-vocab question
+(Finding 4, 2026-06-25) RESOLVED: Option A — genre stays free-text; the open-feed layer
+NEVER infers genre.** Phase 3 RSS mirrors the proven Cobb pattern: surface events honestly
+with `genre: null`, gated out under a genre filter. No canonical vocab, no classifier, no
+inference — keeps the "never invent" line clean (this is why Phase 2's classifier idea was
+moot, not just its sources). The original brief's `genreSource`/B-compatible seam is moot
+while feeds assert no genre; if the web-app pivot later wants feed genres, build the
+canonical set then with full context. **Phase 3 build is now unblocked.** Given the Phase 2
+lesson (premise didn't survive recon), START PHASE 3 WITH RECON: confirm Red Light Café +
+GA Tech Arts feeds are genuine concert listings before adding the parser dep.
 
 **Refinement noted.** Cobb's "Music & Concerts" category is broad — includes musicals
 ("Footloose"), comedy open mics, festivals alongside concerts. Honest (publisher's own
