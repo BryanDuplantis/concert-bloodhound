@@ -6,7 +6,7 @@
  * Build-order spec + provenance: docs/atlanta-source-map.md.
  */
 
-export type FeedType = "ical";
+export type FeedType = "ical" | "rss";
 
 export interface FeedSource {
   /** Stable id (logging, dedup of sources). */
@@ -18,11 +18,12 @@ export interface FeedSource {
   type: FeedType;
   url: string;
   /**
-   * Keep only events whose iCal CATEGORIES intersect these (case-insensitive).
-   * This is the honest music filter — we only surface what the publisher itself
-   * categorized as music, never a keyword guess.
+   * iCal only: keep only events whose CATEGORIES intersect these
+   * (case-insensitive). The honest music filter — we surface only what the
+   * publisher itself categorized as music, never a keyword guess. RSS sources
+   * (single-venue concert feeds) carry no categories and omit this.
    */
-  musicCategories: string[];
+  musicCategories?: string[];
 }
 
 export const FEED_SOURCES: FeedSource[] = [
@@ -33,6 +34,15 @@ export const FEED_SOURCES: FeedSource[] = [
     type: "ical",
     url: "https://travelcobb.org/events/list/?shortcode=24f53d40&hide_subsequent_recurrences=1&ical=1",
     musicCategories: ["Music & Concerts"],
+  },
+  {
+    // Single-venue indie music venue (Squarespace RSS). Closes long-tail shows
+    // TM misses. Event date lives only in the URL slug — see redlight.ts.
+    id: "redlight",
+    name: "Red Light Café",
+    metro: "atlanta",
+    type: "rss",
+    url: "https://redlightcafe.com/events?format=rss",
   },
 ];
 
