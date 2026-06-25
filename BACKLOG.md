@@ -10,7 +10,7 @@ not blocking it.
 Four items from a live test pass against the running server. **Only the first carries a
 correctness cost; the other three are feature/UX/honesty gaps with no wrong-output.**
 
-1. **[CORRECTNESS — highest] Intra-source duplicate survives the merge.** A Ticketmaster
+1. **[CORRECTNESS — highest] ← NEXT ACTION (set 2026-06-25): fix this first. Intra-source duplicate survives the merge.** A Ticketmaster
    relocation lists the SAME show twice (two event IDs) — e.g. smokedope2016 @ Tabernacle
    2026-06-25 as "Moved to Tabernacle" (7pm) AND "Moved from Masquerade" (8pm). Both rows
    survive because `mergeConcerts` dedups CROSS-source only (`mergeConcerts(mergeConcerts(tm,jb),feed)`);
