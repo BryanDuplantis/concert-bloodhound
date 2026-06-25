@@ -1,5 +1,5 @@
 import type { Concert } from "./types.js";
-import { safeUrl } from "./types.js";
+import { safeUrl, sanitizeConcert } from "./types.js";
 
 // JamBase Data API v3 (the self-service Data Platform). The v1→v3 migration
 // changed THREE things at once: the origin (api.data.jambase.com, not
@@ -253,6 +253,8 @@ export async function searchEvents(p: JamBaseSearchParams): Promise<Concert[]> {
     page: p.page,
   });
   const events = extractEvents(data);
+  // Sanitize at the source boundary, AFTER the genre relabel below — so the
+  // overridden genre is hardened too, not just the normalizer's fields.
   if (p.genre) {
     const want = p.genre;
     // Keep only events whose headliner is tagged with the requested genre, and
@@ -260,8 +262,8 @@ export async function searchEvents(p: JamBaseSearchParams): Promise<Concert[]> {
     // result as "Metal"/"Folk" just because that's the headliner's first tag.
     return events.flatMap((e) => {
       const slug = matchedGenreSlug(e, want);
-      return slug ? [{ ...normalizeJamBaseEvent(e), genre: prettyGenre(slug) }] : [];
+      return slug ? [sanitizeConcert({ ...normalizeJamBaseEvent(e), genre: prettyGenre(slug) })] : [];
     });
   }
-  return events.map(normalizeJamBaseEvent);
+  return events.map(normalizeJamBaseEvent).map(sanitizeConcert);
 }

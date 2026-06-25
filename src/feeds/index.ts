@@ -9,7 +9,7 @@
  * within the long-lived stdio server.
  */
 import type { Concert } from "../types.js";
-import { safeUrl } from "../types.js";
+import { safeUrl, sanitizeConcert } from "../types.js";
 import { fetchICalText, parseICal, parseLocation, type ICalEvent } from "./ical.js";
 import { sourcesForMetro, type FeedSource } from "./registry.js";
 
@@ -81,7 +81,8 @@ export async function fetchMetroFeeds(
       return events
         .filter((e) => matchesMusic(e, src.musicCategories))
         .filter((e) => inWindow(e.date, window.start, window.end))
-        .map((e) => toConcert(e, src));
+        // Harden each feed event's free text at the source boundary.
+        .map((e) => sanitizeConcert(toConcert(e, src)));
     }),
   );
 

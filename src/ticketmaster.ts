@@ -1,5 +1,5 @@
 import type { Concert } from "./types.js";
-import { safeUrl } from "./types.js";
+import { safeUrl, sanitizeConcert, sanitizeText } from "./types.js";
 
 const BASE = "https://app.ticketmaster.com/discovery/v2";
 
@@ -165,7 +165,9 @@ export async function searchEvents(p: SearchParams): Promise<Concert[]> {
     size: p.size ?? 20,
   });
   const events: any[] = data?._embedded?.events ?? [];
-  return events.map(normalizeEvent);
+  // Sanitize at the source boundary: attacker-influenceable event text never
+  // leaves this client unhardened (mirrors the network-isolation invariant).
+  return events.map(normalizeEvent).map(sanitizeConcert);
 }
 
 /** Resolve a venue name to its Ticketmaster id (most relevant match). */
@@ -182,5 +184,11 @@ export async function findVenue(
   });
   const v = data?._embedded?.venues?.[0];
   if (!v?.id) return null;
-  return { id: v.id, name: v.name ?? keyword, city: v.city?.name ?? null };
+  // The resolved venue name flows verbatim into the user-facing summary label —
+  // harden it like any other upstream free text; fall back to the caller's keyword.
+  return {
+    id: v.id,
+    name: sanitizeText(v.name) ?? keyword,
+    city: sanitizeText(v.city?.name),
+  };
 }
