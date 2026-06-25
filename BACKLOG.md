@@ -30,12 +30,17 @@ Remaining recommendations, not auto-applied:
   to an exact version (it's the trust-critical dep that sees every tool arg).
 - **M3 — prompt injection via upstream concert data.** Event names / artists / feed
   summaries are attacker-influenceable free text flowing verbatim into the LLM context.
-  Cheap mitigation: strip control chars + cap field length in the normalizers, and/or a
-  short "untrusted external data" preamble in tool output. Zod validates shape, not content.
-  **Revisit-by (set 2026-05-25): event-gated — resolve BEFORE/WHEN HTTP transport for
-  iOS is added** (see cross-surface section above). Surface area is small while
-  stdio/Mac-only; going public sharpens it. M2 has no hard date but apply `npm ci` the
-  next time deps are installed. Don't let either sit undated and become wallpaper.
+  **M3 cheap hardening SHIPPED 2026-06-25 (`646286e`)** — control-char strip + length cap
+  (256, ellipsis) at the source boundaries, all 3 sources (`sanitizeText`/`sanitizeConcert`
+  in `types.ts`, applied at `ticketmaster`/`jambase`/`feeds` output + `findVenue`; offline
+  guards in `types.test.ts`; live `smoke:mcp` green). **NOT M3 done — REDUCED, not closed.**
+  The full prompt-injection treatment remains event-gated to the HTTP/iOS build: the
+  optional "untrusted external data" preamble in tool output was deliberately skipped (soft
+  value, presentation noise), and a public transport sharpens the surface beyond what a
+  content-strip covers (key handling, server-side trust boundary). **The gate did NOT move
+  — resolve BEFORE/WHEN HTTP transport for iOS is added** (see cross-surface section above).
+  Zod validates shape, not content; the cheap layer now guards content at the boundary.
+  M2 has no hard date but apply `npm ci` the next time deps are installed.
 - **L3/L4 — awareness only.** `nearestMetroKey` `?? 0` fallback (trusted table data);
   `jbGet`/`tmFetch` path arg would allow base-URL escape IF ever made dynamic (not
   reachable today — all callers pass hardcoded literals).
