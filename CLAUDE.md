@@ -106,6 +106,13 @@ Death Angel, which TM files under Metal, surfaces under a Rock search). Every so
 is fetched independently, so any one failing — including a TM outage — degrades
 gracefully instead of failing.
 
+## Native Web/runtime APIs
+Use native Web/runtime APIs — `URL`/`URLSearchParams` for query construction (never
+string-concatenated query params), `fetch` + `AbortSignal.timeout` for HTTP with
+timeouts, `Promise.allSettled` for the multi-source fan-out (already the pattern
+in `search_concerts`). Never hand-roll query-string encoding, timeout timers, or
+retry plumbing the runtime already covers.
+
 ## Secrets
 `TICKETMASTER_API_KEY` and `JAMBASE_API_KEY` live only in `.env` (gitignored). Never
 commit them, never echo them, never pass them as a CLI arg that lands in shell
