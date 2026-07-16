@@ -81,7 +81,13 @@ Two triage lessons, both earned the hard way in this section:
    John Berry double-header, and needs no heuristic on upstream free text. Survivor = the most
    complete copy (populated-field count, then longer name so a support act isn't dropped —
    "Austin Meade with Cole Barnhill" beats "Austin Meade"), held at the first occurrence's
-   position for stable ordering. Consequence worth knowing: on an exact tie the incumbent wins,
+   position for stable ordering. **Genre is scored through a catch-all filter, not raw
+   nullness** — TM's duplicate listings of one show disagree (John Berry 7/25 came back
+   "Other" on one event id, "Country" on two others), and counting "Other" as populated made
+   them tie, so first-seen won and the catch-all shipped. Caught only by looking at rendered
+   output; the field was non-null the whole time, so every null-check passed. PM-8's shape in
+   a new outfit: a present value that isn't a populated one. Ranking-only — if every copy says
+   "Other", "Other" is what TM knows and what we show. Consequence worth knowing: on an exact tie the incumbent wins,
    and TM returns the DICE row first, so the partner link is what survives an identical pair.
    A deliberate call — a hardcoded `ticketmaster.com` host preference was rejected because it
    drops the support-act detail the partner row carries.

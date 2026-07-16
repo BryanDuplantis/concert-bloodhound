@@ -124,14 +124,32 @@ export function venueMatches(eventVenue: string | null, query: string): boolean 
 }
 
 /**
+ * Ticketmaster's catch-all classifications. These are present values that carry no
+ * genre — a field wearing the costume of data — so scoring them as "populated" lets
+ * an empty row tie a real one. Only ever used to RANK duplicate copies of one show;
+ * never to blank a surfaced value. If every copy says "Other", "Other" is what TM
+ * knows and what we show.
+ */
+const CATCH_ALL_GENRES = new Set(["other", "undefined", "unknown", "miscellaneous"]);
+const informativeGenre = (c: Concert): string | null =>
+  c.genre && !CATCH_ALL_GENRES.has(canonical(c.genre)) ? c.genre : null;
+
+/**
  * Is `a` a strictly better copy of the same show than `b`? More populated fields
  * wins; on a tie the longer name wins, which is how a support act survives — the
  * partner row reads "Austin Meade with Cole Barnhill" where the native row reads
  * "Austin Meade". Strict, so an exact tie leaves the incumbent in place.
+ *
+ * Genre is scored through `informativeGenre`, not raw nullness. TM's duplicate
+ * listings of one show routinely disagree — John Berry 2026-07-25 came back as
+ * "Other" on one event id and "Country" on two others — and counting "Other" as
+ * populated made those tie, so first-seen won and the catch-all was what shipped.
+ * Both values are TM's own data for the same event; preferring the specific one
+ * invents nothing.
  */
 function moreComplete(a: Concert, b: Concert): boolean {
   const filled = (c: Concert) =>
-    [c.date, c.time, c.venue, c.city, c.region, c.genre, c.priceMin, c.priceMax, c.currency, c.url, c.ageRestriction]
+    [c.date, c.time, c.venue, c.city, c.region, informativeGenre(c), c.priceMin, c.priceMax, c.currency, c.url, c.ageRestriction]
       .filter((v) => v != null).length;
   const fa = filled(a);
   const fb = filled(b);

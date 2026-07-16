@@ -253,6 +253,24 @@ test("dedupeWithinSource keeps the more complete copy of a partner dupe", () => 
   assert.equal(dedupeWithinSource([wordy, priced])[0].priceMin, 20);
 });
 
+test("dedupeWithinSource prefers a real genre over TM's catch-all", () => {
+  // Live: TM returned John Berry 2026-07-25 18:00 three times — "Other" on one event
+  // id, "Country" on two others. Counting "Other" as populated made them tie, so
+  // first-seen won and the catch-all shipped. Both values are TM's own for one show.
+  const catchAll = concert({ artists: ["John Berry"], date: "2026-07-25", time: "18:00:00", genre: "Other" });
+  const real = concert({ artists: ["John Berry"], date: "2026-07-25", time: "18:00:00", genre: "Country" });
+  assert.equal(dedupeWithinSource([catchAll, real])[0].genre, "Country");
+  assert.equal(dedupeWithinSource([real, catchAll])[0].genre, "Country"); // order-independent
+  // Honest floor: if every copy is a catch-all, that IS what TM knows — don't blank it.
+  const both = dedupeWithinSource([catchAll, concert({ artists: ["John Berry"], date: "2026-07-25", time: "18:00:00", genre: "Undefined" })]);
+  assert.equal(both.length, 1);
+  assert.equal(both[0].genre, "Other");
+  // A catch-all must not outrank a real genre just by carrying a longer name.
+  const wordy = concert({ artists: ["A"], date: "2026-07-25", time: "19:00:00", genre: "Other", name: "A with a long billing" });
+  const terse = concert({ artists: ["A"], date: "2026-07-25", time: "19:00:00", genre: "Jazz", name: "A" });
+  assert.equal(dedupeWithinSource([wordy, terse])[0].genre, "Jazz");
+});
+
 test("dedupeWithinSource does NOT collapse an early/late double-header", () => {
   // The regression this key exists to prevent. Eddie's Attic runs two separate,
   // separately-ticketed shows a night; artist+date alone would hide one of them.
