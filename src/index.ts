@@ -216,8 +216,19 @@ server.registerTool(
     const want = args.size ?? 10;
     const geo = resolveGeo(args.latlong, args.city);
     const near = geo?.label ?? args.city;
-    try {
-      const raw = await searchEvents({
+
+    // JamBase fires either scoped to a mapped metro, or — when the caller named no
+    // place at all — nationwide, which its artistName filter supports and which is
+    // what "where is this artist playing?" actually means. The one case it must sit
+    // out: a place we CAN'T map (unknown city, raw latlong, a state or country
+    // code). Going nationwide there would answer a Boise question with Nashville
+    // shows — a wrong answer, worse than the coverage gap it closes.
+    const askedForPlace = !!(args.city || args.latlong || args.stateCode || args.countryCode);
+    const jbId = geo?.metroKey ? jambaseMetroId(geo.metroKey) : null;
+    const wantJb = jbId != null || !askedForPlace;
+
+    const [tmRes, jbRes] = await Promise.allSettled([
+      searchEvents({
         keyword: args.artist,
         city: geo ? undefined : args.city,
         latlong: geo?.latlong,
@@ -227,20 +238,43 @@ server.registerTool(
         startDateTime: toStart(args.startDate),
         endDateTime: toEnd(args.endDate),
         size: Math.min(Math.max(want, 20), 50),
-      });
-      const windowed = applyDateWindow(dedupeWithinSource(raw), args.startDate, args.endDate);
-      const results = applyMaxPrice(windowed, args.maxPrice).slice(0, want);
-      const summary = results.length
-        ? `Here ${results.length === 1 ? "is an" : "are"} upcoming ${args.artist} concert${
-            results.length === 1 ? "" : "s"
-          }:`
-        : `I didn't find upcoming ${args.artist} concerts${
-            near ? ` near ${near}` : ""
-          }. They may not be touring that window, or the dates aren't on Ticketmaster yet.`;
-      return ok(results, summary);
-    } catch (e) {
-      return fail(errMsg(e));
+      }),
+      wantJb
+        ? searchJamBaseEvents({
+            artistName: args.artist,
+            geoMetroId: jbId ?? undefined,
+            eventDateFrom: args.startDate,
+            eventDateTo: args.endDate,
+          })
+        : Promise.resolve([] as Concert[]),
+    ]);
+
+    const tm = tmRes.status === "fulfilled" ? tmRes.value : [];
+    const tmError = tmRes.status === "rejected" ? errMsg(tmRes.reason) : null;
+    const jb = jbRes.status === "fulfilled" ? jbRes.value : [];
+    if (jbRes.status === "rejected") console.error(`JamBase failed: ${errMsg(jbRes.reason)}`);
+
+    // A TM outage must not decide the answer now that a second source can answer —
+    // the same rule search_by_venue learned in 56fd07a. Only a total blackout fails.
+    if (tmError && jb.length === 0) return fail(tmError);
+
+    const merged = mergeConcerts(dedupeWithinSource(tm), jb);
+    const windowed = applyDateWindow(merged, args.startDate, args.endDate);
+    // Sort is load-bearing since JamBase joined: TM alone came back date,asc, but
+    // merged rows are appended, so without this a JamBase-only show lands last
+    // regardless of its date.
+    const results = applyMaxPrice(windowed, args.maxPrice).sort(byDateAsc).slice(0, want);
+
+    let summary = results.length
+      ? `Here ${results.length === 1 ? "is an" : "are"} upcoming ${args.artist} concert${
+          results.length === 1 ? "" : "s"
+        }:`
+      : `I didn't find upcoming ${args.artist} concerts${near ? ` near ${near}` : ""}. ` +
+        `They may not be touring that window${wantJb ? "" : ", and only Ticketmaster was searched for that location"}.`;
+    if (tmError && results.length > 0) {
+      summary += " (Ticketmaster was unreachable — showing results from other sources only.)";
     }
+    return ok(results, summary);
   },
 );
 

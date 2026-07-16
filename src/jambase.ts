@@ -97,13 +97,34 @@ export function extractEvents(data: any): any[] {
 }
 
 export interface JamBaseSearchParams {
-  /** JamBase geoMetroId, e.g. "jambase:10" (Atlanta). Required. */
-  geoMetroId: string;
+  /**
+   * JamBase geoMetroId, e.g. "jambase:10" (Atlanta). Optional ONLY when artistName
+   * is given — an artist lookup is meaningful nationwide, a browse is not. Callers
+   * must supply at least one; an unscoped events query would page the whole catalog.
+   */
+  geoMetroId?: string;
   eventDateFrom?: string; // YYYY-MM-DD
   eventDateTo?: string; // YYYY-MM-DD
   page?: number;
   /** Optional genre filter, matched against the headliner's tags (see headlinerMatchesGenre). */
   genre?: string;
+  /**
+   * Server-side artist filter (verified live 2026-07-16 against the unknown-parameter
+   * oracle: JamBase 400s on any param it doesn't know, and accepts this one).
+   * Server-side is the point — the genre filter below is client-side and therefore
+   * sees only page 1, which is tolerable for a browse but would make a targeted
+   * artist lookup miss anyone past the first 40 events.
+   *
+   * It matches ANY performer in the lineup, not just the headliner — which is a
+   * feature: it surfaces "Grand Ole Opry" nights where the artist is one of several
+   * billed acts. It is also a SUBSTRING match, so "Eagles" returns Eagles of Death
+   * Metal and Eagles tribute acts. That fuzz is not filtered here: these rows are
+   * honestly labeled with their real artist, and the caller's own TM leg is fuzzier
+   * still (its keyword matches venue names — "Eagles" returns a show at Atlanta
+   * Eagles Arena). Tightening artist relevance is a product call tracked in BACKLOG,
+   * and it belongs across both legs or neither.
+   */
+  artistName?: string;
 }
 
 /** Split a genre string into comparable tokens: lowercased, alphanumeric runs. */
@@ -246,8 +267,15 @@ export function normalizeJamBaseEvent(e: any): Concert {
  * eventDateTo] when supplied; otherwise JamBase defaults to the upcoming window.
  */
 export async function searchEvents(p: JamBaseSearchParams): Promise<Concert[]> {
+  // Fail loudly rather than paging the entire catalog: an events query with no
+  // metro AND no artist has no bound at all. Callers gate on this today, so
+  // tripping it means a new caller forgot to.
+  if (!p.geoMetroId && !p.artistName) {
+    throw new JamBaseError("A JamBase event search needs a geoMetroId, an artistName, or both.");
+  }
   const data = await jbGet("events", {
     geoMetroId: p.geoMetroId,
+    artistName: p.artistName,
     eventDateFrom: p.eventDateFrom,
     eventDateTo: p.eventDateTo,
     page: p.page,

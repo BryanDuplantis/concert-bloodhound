@@ -111,27 +111,30 @@ SUMMARY classifier, no canonical vocab.
 
 ## Tools
 - `search_concerts` — city / genre / date range / max price.
-- `search_by_artist` — artist (+ optional location / dates / price). **Ticketmaster
-  only — blind to BOTH JamBase and the open feeds.** The handler calls `searchEvents()`
-  and nothing else; it is the last tool where one source decides the answer. The two
-  gaps are NOT the same difficulty, so don't close them as one job:
-  - **JamBase — mechanical, no product call needed.** JamBase events carry a real
-    `performer[]` with a headliner, so artist matching works exactly as it does in
-    `search_concerts`. This is unfinished work, not a deferred decision: the 2026-05-25
-    JamBase plan promised both tools and only `search_concerts` landed. Real cost — a
-    JamBase-only act (the free-festival / civic tail TM's catalog misses, the exact hole
-    JamBase exists to close) reports "not touring" here while `search_concerts` finds it.
-  - **Feeds — needs a product call first.** Feed events carry the post TITLE as the
-    artist ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer field.
-    Matching against that either misses (title formatting varies) or over-matches (a
-    support act named in the title surfaces as a headliner). `venueMatches` is NOT the
+- `search_by_artist` — artist (+ optional location / dates / price). Ticketmaster **and**
+  JamBase (2026-07-16); open feeds still out. JamBase uses the server-side `artistName`
+  filter — server-side is the point, since the client-side genre filter only sees page 1
+  and a targeted lookup can't miss anyone past the first 40 events.
+  - **JamBase fires scoped to a mapped metro, or nationwide when no place is named** —
+    "where is this artist playing?" is a meaningful nationwide question, unlike a browse.
+    It sits out when a place is named that we CAN'T map (unknown city, raw latlong, state
+    or country code): going nationwide there answers a Boise question with Nashville shows.
+    Verified live — no place returns Grand Ole Opry + Princess Theater nights TM lacks;
+    `city: "Boise"` returns nothing rather than out-of-area rows.
+  - **Feeds remain out, and need a product call first.** Feed events carry the post TITLE
+    as the artist ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer
+    field. Matching against that either misses (title formatting varies) or over-matches
+    (a support act named in the title surfaces as a headliner). `venueMatches` is NOT the
     precedent to copy: it resolves a human's typed venue name, where containment is the
     intended semantics. Artist-in-title is a different problem — settle the semantics
     before writing the matcher.
-  Tracked in `BACKLOG.md`. Until wired, this tool can produce the confident-false-absence
-  that `search_by_venue` was fixed for (2026-07-16) — one source's silence read as "not
-  touring". Its no-results string hedges to "aren't on Ticketmaster yet", honest about the
-  source but still reads as absence.
+  - **Both legs are fuzzy, and TM is the fuzzier one** — its `keyword` matches VENUE
+    names, so "Eagles" returns a Deorro show at Atlanta Eagles Arena. JamBase's
+    `artistName` at least stays inside artist names, though it is a substring match
+    (returns Eagles of Death Metal and Eagles tributes). Neither is filtered: the rows are
+    honestly labelled with their real artist. Tightening artist relevance is a product
+    call in BACKLOG — do NOT reimplement TM's matching client-side (PM-47), and do it
+    across both legs or neither.
 - `search_by_venue` — venue lookup → its upcoming events, from Ticketmaster **and**
   the metro's open feeds (2026-07-16). The feed leg is not optional: a feed-only
   room (Red Light Café) has no TM venue id, so a TM miss or outage must not decide

@@ -206,9 +206,19 @@ export function dedupeWithinSource(concerts: Concert[]): Concert[] {
  * show; the venue only ever caused leaks, because each source formats the same
  * room differently and irreconcilably — "Tabernacle" vs "The Tabernacle",
  * "District - GA" (TM appends the state) vs "District Atlanta" (JamBase appends
- * the city). Tradeoff: the rare same-artist/same-day/different-venue pair split
- * across sources (e.g. a free in-store + an evening ticketed show) collapses to
- * the Ticketmaster copy — an acceptable loss for a concert finder.
+ * the city). Tradeoff: a same-artist/same-day pair split across sources (a free
+ * in-store + an evening ticketed show; an early and a late set) collapses to the
+ * Ticketmaster copy.
+ *
+ * That tradeoff was accepted on the premise that such pairs are RARE, and 2026-07-16
+ * weakened the premise: double-headers turn out to be routine at listening rooms
+ * (Eddie's Attic books an early and a late set most nights — John Berry, 2026-07-25,
+ * 18:00 and 20:00). It still holds TODAY only because TM carries both sets, so the
+ * JamBase copies dedup away harmlessly. It would BITE the day TM carries one set and
+ * JamBase the other: the second show vanishes. Adding time to this key is NOT the
+ * fix — sources disagree on time formatting and JamBase omits it entirely for some
+ * events, which is exactly why the key excludes it. Revisit if a split-coverage
+ * double-header is ever observed; tracked in BACKLOG.
  *
  * Only dedups extra-against-primary — duplicates WITHIN one source's own list are
  * `dedupeWithinSource`'s job, on a deliberately different (time-aware) key. Run it

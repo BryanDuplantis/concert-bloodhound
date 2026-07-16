@@ -5,35 +5,54 @@ not blocking it.
 
 ---
 
-## `search_by_artist` is single-source (tracked 2026-07-16)
+## `search_by_artist` — JamBase leg ✅ SHIPPED 2026-07-16; feed leg + precision still open
 
-**[honesty / coverage] `search_by_artist` queries Ticketmaster ONLY** — it is the last tool
-where a single source decides the answer. `src/index.ts` (the `search_by_artist` handler) calls
-`searchEvents()` and nothing else, while `search_concerts` fans out to TM + JamBase + feeds via
-`Promise.allSettled` and `search_by_venue` covers TM + feeds since `56fd07a`. Untracked until
-now; recorded so it isn't rediscovered a fourth time.
+**JamBase leg DONE.** `search_by_artist` now fans out to TM + JamBase via `Promise.allSettled`,
+closing the half of the 2026-05-25 plan that never landed. A TM outage no longer decides the
+answer (the `56fd07a` rule, applied to the third tool), and results are now sorted — TM alone
+came back `date,asc`, but merged rows are appended, so a JamBase-only show would otherwise land
+last regardless of date.
 
-Two distinct gaps, different difficulty — do not conflate them:
+- **Uses JamBase's server-side `artistName` param, NOT a client-side filter.** Found by probing
+  the live API against its own unknown-parameter oracle (JamBase 400s on any param it doesn't
+  know; control-tested with a garbage name first — cf. PM-10). Server-side is load-bearing: the
+  genre filter is client-side and therefore sees only page 1, which is tolerable for a browse
+  but would make a targeted artist lookup silently miss anyone past the first 40 events.
+  `artistName` also matches ANY performer in the lineup, which surfaces "Grand Ole Opry" nights
+  where the artist is one of several billed acts.
+- **Scoping rule:** JamBase fires scoped to a mapped metro, or nationwide when no place is
+  named. It SITS OUT when a place is named that we can't map (unknown city, raw latlong, state
+  or country code) — going nationwide there would answer a Boise question with Nashville shows,
+  a wrong answer rather than a coverage gap. Verified live: no place → 8 rows incl. Grand Ole
+  Opry 7/18 + 10/31 and Princess Theater 8/21 (all JamBase, none in TM); `city: "Boise"` → 0
+  rows, JamBase silent.
 
-- **JamBase leg — mechanical, no product call needed.** JamBase events carry a real
-  `performer[]` with a headliner, so artist matching works the same way it does in
-  `search_concerts`. The original JamBase plan below explicitly said "wire both providers
-  (TM + JamBase) into `search_concerts` / `search_by_artist`" — only the first half landed
-  2026-05-25. This is unfinished work, not a deferred decision. Concrete cost: a JamBase-only
-  act (the free-festival / civic tail TM's catalog misses — the exact hole JamBase exists to
-  close) returns "not touring" from `search_by_artist` while `search_concerts` finds it.
-- **Feed leg — needs a product call first.** Feed events carry the post TITLE as the artist
-  ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer field. Matching an
-  artist against that means substring-matching a human-written headline, which either misses
-  (title formatting varies) or over-matches (a support act named in the title surfaces as a
-  headliner). `venueMatches()` is NOT the precedent to copy here — it resolves a human's typed
-  venue name against a venue string, where containment is the intended semantics. Artist-in-title
-  is a different problem. Decide the semantics before writing the matcher.
+**Still open — feed leg, needs a product call first.** Feed events carry the post TITLE as the
+artist ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer field. Matching an
+artist against that means substring-matching a human-written headline, which either misses
+(title formatting varies) or over-matches (a support act named in the title surfaces as a
+headliner). `venueMatches()` is NOT the precedent to copy here — it resolves a human's typed
+venue name against a venue string, where containment is the intended semantics. Artist-in-title
+is a different problem. Decide the semantics before writing the matcher.
 
-The failure mode is the one `56fd07a` just fixed one tool over: a confident negative
-("They may not be touring that window") sourced from one provider's silence. The user-facing
-string already hedges to "aren't on Ticketmaster yet", which is honest about the source but
-still reads as absence.
+**NEW — [precision] `search_by_artist` is not really an artist search (found 2026-07-16, NOT
+fixed).** Both legs are fuzzy, and **Ticketmaster is the fuzzier one: its `keyword` matches
+VENUE names.** Live — `artist: "Eagles"` near Atlanta returns `Eagles of Death Metal` (a
+different band), `Deorro` at **Atlanta Eagles Arena**, and `CAIN` at **Eagles Landing First
+Baptist Church**, under the summary "Here are upcoming Eagles concerts". The last two match
+nothing but the room's name. JamBase's `artistName` is *more* precise — its fuzz at least stays
+inside artist names, though it is a substring match (returns Eagles tributes). This is
+pre-existing, predates the JamBase leg, and was NOT made worse by it.
+
+Deliberately not fixed, because the obvious fix is a trap: filtering results by canonical
+containment on the query would **reimplement TM's matching rule client-side** (PM-47 — validates
+your model, not the system). TM's `keyword` may resolve aliases/attractions that naive
+containment can't, so a containment filter risks converting a fuzzy-but-useful hit into a false
+absence — the worst bug class in this project. A probe of `mgk` / `P!nk` / `Puff Daddy` was
+inconclusive (those acts aren't touring, so 0-row results prove nothing either way). **Settle it
+with evidence, not reasoning:** find an artist whose TM alias demonstrably differs from their
+billed name and is touring, and check whether TM's keyword resolves it. Then decide — and apply
+the result across BOTH legs or neither.
 
 ---
 
@@ -280,7 +299,19 @@ neighbouring genre (Death Angel under Metal → surfaces on a Rock search); plus
 
 **Open (not blocking):** (1) **artist-NAME divergence** ("mgk" vs "Machine Gun
 Kelly") can slip a dupe — DELIBERATELY not fixed: fuzzy artist matching risks merging
-distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain. (2) ~~**Date
+distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain.
+**(1b) NEW — the cross-source key's "rare collision" premise weakened 2026-07-16.**
+`mergeConcerts` keys on artist|date WITHOUT time, accepting that a same-artist/same-day
+pair split across sources collapses to the TM copy — justified as rare. Double-headers
+are NOT rare: Eddie's Attic books an early and a late set most nights (John Berry
+2026-07-25, 18:00 + 20:00). Harmless TODAY because TM carries both sets, so JamBase's
+copies dedup away cleanly — verified live. It bites the day TM carries one set and
+JamBase the other: the second show silently vanishes. **Adding time to the cross-source
+key is NOT the fix** — sources disagree on time formatting and JamBase omits it for some
+events, which is precisely why the key excludes it (contrast `dedupeWithinSource`, where
+one source's own formatting is self-consistent, so time IS safe). No live specimen of a
+split-coverage double-header yet; don't build against it blind. Falsifier to watch for:
+a date where TM and JamBase each hold a different set by the same artist. (2) ~~**Date
 window last-day**: TM can still OMIT a late-night show on the window's last local day.~~
 **✅ FIXED 2026-07-16 — and it was FAR worse than this entry described.** `toEnd` sent an
 exact-looking `${end}T23:59:59Z`; EDT is UTC-4, so on the window's last local day EVERY
