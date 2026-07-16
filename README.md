@@ -52,7 +52,7 @@ npm run build
 ```bash
 npm run smoke       # direct API: real NYC events + an Atlanta metro geospatial search
 npm run smoke:mcp   # full protocol: spawns the server, lists tools, returns live concerts
-npm run smoke:feeds # open feeds: live Cobb (Atlanta) music events TM doesn't carry
+npm run smoke:feeds # open feeds: live Atlanta music events TM doesn't carry (Cobb + Red Light)
 npm test            # offline unit suite: geo resolver, merge/dedup, iCal parser
 ```
 The smokes exit non-zero on failure — a green check means real events came back, not just rc=0.
@@ -102,10 +102,13 @@ secret lands in shell history.
 
 ## Limitations (v0.1, MVP)
 
-- Primary source is Ticketmaster. `search_concerts` also merges open civic/indie
-  feeds for metros that have them (currently Atlanta — Cobb Travel & Tourism, the
-  free/civic shows TM doesn't carry); other metros are TM-only until their feeds
-  are added. `search_by_artist`/`search_by_venue` stay TM-only.
+- Primary source is Ticketmaster. `search_concerts` merges Ticketmaster, JamBase, and
+  open civic/indie feeds for metros that have them (currently Atlanta — Cobb Travel &
+  Tourism and Red Light Café, the free/civic and indie shows TM doesn't carry); other
+  metros are TM + JamBase until their feeds are added. `search_by_venue` covers
+  Ticketmaster plus the metro's feeds. **`search_by_artist` is Ticketmaster-only** — so
+  for an artist playing only a JamBase- or feed-sourced show, it can report nothing while
+  `search_concerts` finds it.
 - US-centric defaults (`countryCode` defaults to `US`; override per call). Built-in
   metro coordinate resolution covers major US metros only; elsewhere, pass `latlong`.
 - Relative dates ("this weekend") are resolved by the *calling* assistant into
