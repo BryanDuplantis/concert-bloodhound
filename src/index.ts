@@ -131,7 +131,10 @@ server.registerTool(
           })
         : Promise.resolve([] as Concert[]),
       wantFeeds
-        ? fetchMetroFeeds(geo!.metroKey!, { start: args.startDate, end: args.endDate })
+        ? fetchMetroFeeds(geo!.metroKey!, {
+            start: args.startDate ?? todayLocal(),
+            end: args.endDate,
+          })
         : Promise.resolve([] as Concert[]),
     ]);
 

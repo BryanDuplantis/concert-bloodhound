@@ -14,6 +14,18 @@ type ToolResult = { content?: Array<{ type: string; text?: string }>; isError?: 
 const textOf = (res: ToolResult): string =>
   res.content?.find((c) => c.type === "text")?.text ?? "";
 
+/**
+ * Dates rendered as upcoming that have already passed. Open feeds publish their
+ * whole calendar with no server-side lower bound (unlike the TM API), so this is
+ * the guard that an undated search still never answers with a past show.
+ */
+const pastDatesIn = (res: ToolResult): string[] => {
+  const today = new Date().toLocaleDateString("en-CA");
+  return [...textOf(res).matchAll(/^\s*Date: \w+, (\w+ \d+, \d{4})$/gm)]
+    .map((m) => new Date(m[1]).toLocaleDateString("en-CA"))
+    .filter((d) => d < today);
+};
+
 /** A call failed unless it returned at least one real listing with a ticket link. */
 const failed = (res: ToolResult): boolean => {
   const text = textOf(res);
@@ -59,21 +71,23 @@ async function main() {
   await client.close();
 
   const redlightText = textOf(redlight);
-  // Feeds publish their whole calendar with no server-side lower bound, so an
-  // undated search must still never answer with a past show.
-  const staleDates = [...redlightText.matchAll(/^\s*Date: \w+, (\w+ \d+, \d{4})$/gm)]
-    .map((m) => new Date(m[1]).toLocaleDateString("en-CA"))
-    .filter((d) => d < new Date().toLocaleDateString("en-CA"));
+  const staleVenue = pastDatesIn(redlight);
+  // Atlanta is the metro with open feeds registered, so it's the leg that can
+  // regress: an undated search there once returned nothing BUT past feed events.
+  const staleAtlanta = pastDatesIn(atlanta);
   const redlightFailed =
     !!redlight.isError ||
     /no upcoming concerts are currently listed|couldn't find a venue/i.test(redlightText) ||
     !/Red Light/i.test(redlightText) ||
-    staleDates.length > 0;
+    staleVenue.length > 0;
 
-  if (failed(chicago) || failed(atlanta) || redlightFailed) {
+  if (failed(chicago) || failed(atlanta) || redlightFailed || staleAtlanta.length > 0) {
     console.error("❌ MCP smoke failed: a tool call did not return live concerts.");
-    if (redlightFailed && staleDates.length > 0) {
-      console.error(`   search_by_venue returned past-dated shows as upcoming: ${staleDates.join(", ")}`);
+    if (staleAtlanta.length > 0) {
+      console.error(`   search_concerts returned past-dated shows as upcoming: ${staleAtlanta.join(", ")}`);
+    }
+    if (staleVenue.length > 0) {
+      console.error(`   search_by_venue returned past-dated shows as upcoming: ${staleVenue.join(", ")}`);
     } else if (redlightFailed) {
       console.error("   search_by_venue returned no Red Light Café shows — the feed layer is not reaching it.");
     }
