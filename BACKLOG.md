@@ -277,7 +277,15 @@ Kelly") can slip a dupe — DELIBERATELY not fixed: fuzzy artist matching risks 
 distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain. (2) **Date
 window last-day**: TM can still OMIT a late-night show on the window's last local day
 (UTC end cuts off before local midnight) — needs a tz-aware query, not just the
-client trim. (3) **Genre-aware JamBase** scans page-1 only and won't bridge taxonomy
+client trim. **No longer theoretical — LIVE REPRO found 2026-07-16:** John Berry plays
+Eddie's Attic 2026-07-25 at 18:00 AND 20:00 (a real double-header, two event ids). With
+`endDate: "2026-07-25"` the tool returns ONLY the 18:00 show — the 20:00 EDT show is
+00:00 UTC on 07-26, past the UTC end bound. `endDate: "2026-07-26"` returns both. So a
+user asking "what's at Eddie's Attic through the 25th" is silently shown half the night's
+lineup. This is a false absence on the *last day of every dated window*, the same class
+as the bug `56fd07a` fixed, and it is the highest-value item left in this file — it wrongs
+the answer, where (1) and (3) only narrow it. Falsifier for any fix: that query must
+return both times. (3) **Genre-aware JamBase** scans page-1 only and won't bridge taxonomy
 gaps (a "R&B" request misses "rhythm-and-blues-soul").
 
 **✅ THE WORKING RECIPE (verified 2026-05-25 with the rotated `…BwF2` key):**
