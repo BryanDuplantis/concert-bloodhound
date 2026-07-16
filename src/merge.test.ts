@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyDateWindow, applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
+import { applyDateWindow, applyMaxPrice, byDateAsc, canonical, mergeConcerts } from "./merge.js";
 import type { Concert } from "./types.js";
 
 function concert(p: Partial<Concert>): Concert {
@@ -120,4 +120,38 @@ test("applyMaxPrice keeps null-price events, drops over-budget", () => {
   assert.equal(out.length, 2);
   assert.ok(out.includes(cheap) && out.includes(unknown));
   assert.ok(!out.includes(pricey));
+});
+
+test("canonical folds typographic variants but never distinct names", () => {
+  // The live dupe: TM writes U+0027, JamBase writes U+2019 — one name, two encodings.
+  assert.equal(canonical("Nocturne’s Kiss"), canonical("Nocturne's Kiss"));
+  assert.equal(canonical("Red Light Café"), "red light cafe"); // accent folded
+  assert.equal(canonical("The  Eastern–GA"), "the eastern-ga"); // en dash + runs of space
+  // Canonicalization is not fuzzy matching: distinct acts must stay distinct.
+  assert.notEqual(canonical("Eagles"), canonical("Eagles of Death Metal"));
+  assert.notEqual(canonical("mgk"), canonical("Machine Gun Kelly"));
+});
+
+test("mergeConcerts dedups across an apostrophe encoding mismatch", () => {
+  // Regression: this pair shipped as two rows in a live Atlanta search.
+  const tm = [
+    concert({ artists: ["Nocturne's Kiss"], date: "2026-07-17", venue: "The Masquerade - Altar" }),
+  ];
+  const jb = [
+    concert({
+      artists: ["Nocturne’s Kiss"],
+      date: "2026-07-17",
+      venue: "The Masquerade (Altar)",
+      source: "JamBase",
+    }),
+  ];
+  const out = mergeConcerts(tm, jb);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].source, "Ticketmaster");
+});
+
+test("mergeConcerts still keeps genuinely different acts apart", () => {
+  const tm = [concert({ artists: ["Eagles"], date: "2026-07-17" })];
+  const jb = [concert({ artists: ["Eagles of Death Metal"], date: "2026-07-17", source: "JamBase" })];
+  assert.equal(mergeConcerts(tm, jb).length, 2);
 });

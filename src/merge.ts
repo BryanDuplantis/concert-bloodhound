@@ -45,6 +45,30 @@ export function byDateAsc(a: Concert, b: Concert): number {
 }
 
 /**
+ * Fold a name to a comparable form: strip accents, unify the typographic
+ * variants sources disagree on (curly vs straight apostrophes, dash forms),
+ * lowercase, collapse whitespace.
+ *
+ * This is canonicalization, NOT fuzzy matching — it only reconciles different
+ * encodings of the same characters, so distinct acts ("Eagles" vs "Eagles of
+ * Death Metal") still hash apart. That distinction is load-bearing: fuzzy artist
+ * matching is deliberately rejected (see CLAUDE.md), but Ticketmaster writing
+ * "Nocturne's Kiss" (U+0027) while JamBase writes "Nocturne’s Kiss" (U+2019) is
+ * one name in two encodings, and leaked a live dupe until this folded them.
+ */
+export function canonical(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // combining accents: "Cafe\u0301" -> "cafe"
+    .replace(/[\u2018\u2019\u02bc\u2032]/g, "'") // curly/modifier apostrophes -> '
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2010-\u2015]/g, "-") // hyphen/en/em dash forms -> -
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Merge supplementary events (JamBase, open feeds) into the primary
  * (Ticketmaster) list, dropping cross-source duplicates. The primary source wins
  * — it carries the price, availability, and ticket links the others don't.
@@ -57,9 +81,12 @@ export function byDateAsc(a: Concert, b: Concert): number {
  * the city). Tradeoff: the rare same-artist/same-day/different-venue pair split
  * across sources (e.g. a free in-store + an evening ticketed show) collapses to
  * the Ticketmaster copy — an acceptable loss for a concert finder.
+ *
+ * Only dedups extra-against-primary: duplicates WITHIN the primary list (the TM
+ * relocation dupe) are a separate defect, tracked in BACKLOG.
  */
 export function mergeConcerts(primary: Concert[], extra: Concert[]): Concert[] {
-  const key = (c: Concert) => `${(c.artists[0] ?? c.name).toLowerCase().trim()}|${c.date ?? ""}`;
+  const key = (c: Concert) => `${canonical(c.artists[0] ?? c.name)}|${c.date ?? ""}`;
   const seen = new Set(primary.map(key));
   const merged = [...primary];
   for (const c of extra) {

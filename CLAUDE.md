@@ -33,6 +33,11 @@ smoke:mcp` → the free Atlanta Jazz Festival surfaces in a live Atlanta search 
 **Backlog (not blocking):** (1) artist-NAME divergence between sources ("mgk" vs
 "Machine Gun Kelly") can slip a dupe — deliberately NOT fixed: fuzzy artist matching
 risks merging distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain.
+**Distinct from ENCODING divergence, which IS fixed (2026-07-16):** TM's
+"Nocturne's Kiss" (U+0027) vs JamBase's "Nocturne’s Kiss" (U+2019) leaked a live
+dupe until `canonical()` folded accents/quote-forms/dashes into the dedup key.
+Canonicalization is not fuzzy matching — it reconciles encodings of the same
+characters, so the Eagles guard still holds (unit-tested both ways).
 (2) Date window: TM can still omit a late-night show on the window's LAST local day
 (its UTC end cuts off before local midnight) — needs a tz-aware query, not just the
 client trim. (3) Genre-aware JamBase only scans page-1 events and won't bridge
@@ -75,7 +80,8 @@ SUMMARY classifier, no canonical vocab.
   `city` search auto-upgrade to a geospatial `latlong`+`radius` query, and tags the
   resolved metro key so feeds for that metro are picked up.
 - `src/merge.ts` — PURE result shaping: cross-source dedup (artist|date),
-  date sort, max-price filter.
+  date sort, max-price filter, plus `canonical()` — the name-folding behind the
+  dedup key.
 - `src/types.ts` — Zod `Concert` schema = the typed output contract.
 - `src/format.ts` — pure formatters (price/date/time/result + source attribution,
   incl. the required `Powered by JamBase` line).
