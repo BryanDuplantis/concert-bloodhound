@@ -86,6 +86,61 @@ export function venueMatches(eventVenue: string | null, query: string): boolean 
 }
 
 /**
+ * Is `a` a strictly better copy of the same show than `b`? More populated fields
+ * wins; on a tie the longer name wins, which is how a support act survives — the
+ * partner row reads "Austin Meade with Cole Barnhill" where the native row reads
+ * "Austin Meade". Strict, so an exact tie leaves the incumbent in place.
+ */
+function moreComplete(a: Concert, b: Concert): boolean {
+  const filled = (c: Concert) =>
+    [c.date, c.time, c.venue, c.city, c.region, c.genre, c.priceMin, c.priceMax, c.currency, c.url, c.ageRestriction]
+      .filter((v) => v != null).length;
+  const fa = filled(a);
+  const fb = filled(b);
+  return fa !== fb ? fa > fb : a.name.length > b.name.length;
+}
+
+/**
+ * Collapse duplicate rows WITHIN a single source's own list.
+ *
+ * Ticketmaster's catalog can carry one show twice when a venue also sells through
+ * a ticketing partner: Eddie's Attic surfaces as a `link.dice.fm` row AND a native
+ * `ticketmaster.com` row, same artist, date, time, and venue, differing only by
+ * event id and link. Two rows, one show.
+ *
+ * Identity here is artist + date + **time**, and the time is load-bearing —
+ * unlike the cross-source key below, which omits it. A single source listing the
+ * same artist twice on one date at different times is usually two real shows, not
+ * a duplicate: Eddie's Attic runs a separate, separately-ticketed early and late
+ * show most nights. Keying on artist+date alone would collapse a double-header
+ * into one row and hide a show the user could have bought a ticket to — trading
+ * this bug for a worse one at the very venue that exposes it. Two rows sharing an
+ * unknown (null) time still collapse; a venue running two shows publishes times.
+ *
+ * The surviving row is the most complete copy, held at the first occurrence's
+ * position so result order stays stable. NOT handled: a relocation pair (the same
+ * show relisted at a new venue under a second event id, differing times) — by time
+ * alone that is indistinguishable from a double-header, separable only by TM's
+ * "Moved to/from" name text. No live specimen exists to build against; see BACKLOG.
+ */
+export function dedupeWithinSource(concerts: Concert[]): Concert[] {
+  const key = (c: Concert) => `${canonical(c.artists[0] ?? c.name)}|${c.date ?? ""}|${c.time ?? ""}`;
+  const best = new Map<string, Concert>();
+  const order: string[] = [];
+  for (const c of concerts) {
+    const k = key(c);
+    const held = best.get(k);
+    if (!held) {
+      best.set(k, c);
+      order.push(k);
+    } else if (moreComplete(c, held)) {
+      best.set(k, c);
+    }
+  }
+  return order.map((k) => best.get(k)!);
+}
+
+/**
  * Merge supplementary events (JamBase, open feeds) into the primary
  * (Ticketmaster) list, dropping cross-source duplicates. The primary source wins
  * — it carries the price, availability, and ticket links the others don't.
@@ -99,8 +154,9 @@ export function venueMatches(eventVenue: string | null, query: string): boolean 
  * across sources (e.g. a free in-store + an evening ticketed show) collapses to
  * the Ticketmaster copy — an acceptable loss for a concert finder.
  *
- * Only dedups extra-against-primary: duplicates WITHIN the primary list (the TM
- * relocation dupe) are a separate defect, tracked in BACKLOG.
+ * Only dedups extra-against-primary — duplicates WITHIN one source's own list are
+ * `dedupeWithinSource`'s job, on a deliberately different (time-aware) key. Run it
+ * on each list before merging; this function assumes its inputs are self-consistent.
  */
 export function mergeConcerts(primary: Concert[], extra: Concert[]): Concert[] {
   const key = (c: Concert) => `${canonical(c.artists[0] ?? c.name)}|${c.date ?? ""}`;

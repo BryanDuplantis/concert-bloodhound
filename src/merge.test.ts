@@ -5,7 +5,15 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyDateWindow, applyMaxPrice, byDateAsc, canonical, mergeConcerts, venueMatches } from "./merge.js";
+import {
+  applyDateWindow,
+  applyMaxPrice,
+  byDateAsc,
+  canonical,
+  dedupeWithinSource,
+  mergeConcerts,
+  venueMatches,
+} from "./merge.js";
 import type { Concert } from "./types.js";
 
 function concert(p: Partial<Concert>): Concert {
@@ -154,6 +162,87 @@ test("mergeConcerts still keeps genuinely different acts apart", () => {
   const tm = [concert({ artists: ["Eagles"], date: "2026-07-17" })];
   const jb = [concert({ artists: ["Eagles of Death Metal"], date: "2026-07-17", source: "JamBase" })];
   assert.equal(mergeConcerts(tm, jb).length, 2);
+});
+
+test("dedupeWithinSource collapses a ticketing-partner dupe (live: Eddie's Attic, DICE + TM)", () => {
+  // Regression: these shipped as two rows in a live Atlanta search on 2026-07-16.
+  // One show, two TM event ids — identical but for the link.
+  const tm = [
+    concert({
+      name: "Emerson Woolf & the Wishbones",
+      artists: ["Emerson Woolf & the Wishbones"],
+      date: "2026-07-18",
+      time: "19:00:00",
+      venue: "Eddie's Attic",
+      url: "https://link.dice.fm/M1eeeefeb365",
+    }),
+    concert({
+      name: "Emerson Woolf & the Wishbones",
+      artists: ["Emerson Woolf & the Wishbones"],
+      date: "2026-07-18",
+      time: "19:00:00",
+      venue: "Eddie's Attic",
+      url: "https://www.ticketmaster.com/event/Z7r9jZ1A7PxJ9",
+    }),
+  ];
+  assert.equal(dedupeWithinSource(tm).length, 1);
+});
+
+test("dedupeWithinSource keeps the more complete copy of a partner dupe", () => {
+  // The live pair: the partner row names the support act, the native row doesn't.
+  // Equal field counts, so the richer name decides — losing it would drop real data.
+  const partner = concert({
+    name: "Austin Meade with Cole Barnhill",
+    artists: ["Austin Meade"],
+    date: "2026-07-21",
+    time: "19:00:00",
+    venue: "Eddie's Attic",
+    url: "https://link.dice.fm/C727e445d5b8",
+  });
+  const native = concert({
+    name: "Austin Meade",
+    artists: ["Austin Meade"],
+    date: "2026-07-21",
+    time: "19:00:00",
+    venue: "Eddie's Attic",
+    url: "https://www.ticketmaster.com/event/Z7r9jZ1A7PNF6",
+  });
+  assert.equal(dedupeWithinSource([partner, native])[0].name, "Austin Meade with Cole Barnhill");
+  // Order-independent: the richer row wins from either position.
+  assert.equal(dedupeWithinSource([native, partner])[0].name, "Austin Meade with Cole Barnhill");
+  // A populated field outranks a longer name.
+  const priced = concert({ name: "X", artists: ["A"], date: "2026-07-21", time: "19:00:00", priceMin: 20 });
+  const wordy = concert({ name: "X with a very long support billing", artists: ["A"], date: "2026-07-21", time: "19:00:00" });
+  assert.equal(dedupeWithinSource([wordy, priced])[0].priceMin, 20);
+});
+
+test("dedupeWithinSource does NOT collapse an early/late double-header", () => {
+  // The regression this key exists to prevent. Eddie's Attic runs two separate,
+  // separately-ticketed shows a night; artist+date alone would hide one of them.
+  const tm = [
+    concert({ artists: ["Shawn Mullins"], date: "2026-07-18", time: "19:00:00", venue: "Eddie's Attic" }),
+    concert({ artists: ["Shawn Mullins"], date: "2026-07-18", time: "21:30:00", venue: "Eddie's Attic" }),
+  ];
+  assert.equal(dedupeWithinSource(tm).length, 2);
+});
+
+test("dedupeWithinSource preserves first-seen order while swapping in the richer row", () => {
+  const a = concert({ artists: ["A"], date: "2026-07-01", time: "19:00:00" });
+  const dupeOfA = concert({ artists: ["A"], date: "2026-07-01", time: "19:00:00", priceMin: 25 });
+  const b = concert({ artists: ["B"], date: "2026-07-02", time: "20:00:00" });
+  const out = dedupeWithinSource([a, b, dupeOfA]);
+  assert.deepEqual(out.map((c) => c.artists[0]), ["A", "B"]); // A holds its slot, not moved to the end
+  assert.equal(out[0].priceMin, 25); // but the richer copy is the one kept
+});
+
+test("dedupeWithinSource leaves distinct acts and dates alone", () => {
+  const tm = [
+    concert({ artists: ["Eagles"], date: "2026-07-17", time: "20:00:00" }),
+    concert({ artists: ["Eagles of Death Metal"], date: "2026-07-17", time: "20:00:00" }),
+    concert({ artists: ["Eagles"], date: "2026-07-18", time: "20:00:00" }),
+  ];
+  assert.equal(dedupeWithinSource(tm).length, 3);
+  assert.deepEqual(dedupeWithinSource([]), []);
 });
 
 test("venueMatches resolves a typed query against feed venue formatting", () => {

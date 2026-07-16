@@ -6,7 +6,7 @@ import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
 import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
 import { fetchMetroFeeds } from "./feeds/index.js";
-import { applyDateWindow, applyMaxPrice, byDateAsc, mergeConcerts, venueMatches } from "./merge.js";
+import { applyDateWindow, applyMaxPrice, byDateAsc, dedupeWithinSource, mergeConcerts, venueMatches } from "./merge.js";
 import { resultShape, type Concert } from "./types.js";
 import { formatResults } from "./format.js";
 
@@ -150,7 +150,10 @@ server.registerTool(
 
     // Merge order = source priority: Ticketmaster wins (it alone carries price and
     // native ticket links), then JamBase, then open feeds. Dedup is artist|date.
-    let merged = mergeConcerts(mergeConcerts(tm, jb), feed);
+    // Each source is made self-consistent first: TM can list one show twice when a
+    // venue also sells through a ticketing partner, and a dupe that survives into
+    // the merge would occupy two result slots and outrank a real show.
+    let merged = mergeConcerts(mergeConcerts(dedupeWithinSource(tm), jb), feed);
     const extraCount = jb.length + feed.length;
 
     if (tmError && merged.length === 0) return fail(tmError);
@@ -218,7 +221,7 @@ server.registerTool(
         endDateTime: toEnd(args.endDate),
         size: Math.min(Math.max(want, 20), 50),
       });
-      const windowed = applyDateWindow(raw, args.startDate, args.endDate);
+      const windowed = applyDateWindow(dedupeWithinSource(raw), args.startDate, args.endDate);
       const results = applyMaxPrice(windowed, args.maxPrice).slice(0, want);
       const summary = results.length
         ? `Here ${results.length === 1 ? "is an" : "are"} upcoming ${args.artist} concert${
@@ -308,7 +311,7 @@ server.registerTool(
     }
     if (tmRes.status === "rejected" && feed.length === 0) return fail(errMsg(tmRes.reason));
 
-    const merged = mergeConcerts(tm, feed);
+    const merged = mergeConcerts(dedupeWithinSource(tm), feed);
     const windowed = applyDateWindow(merged, args.startDate, args.endDate);
     const results = applyMaxPrice(windowed, args.maxPrice).sort(byDateAsc).slice(0, want);
     const label = venue

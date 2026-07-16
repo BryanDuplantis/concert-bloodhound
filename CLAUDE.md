@@ -80,8 +80,17 @@ SUMMARY classifier, no canonical vocab.
   `city` search auto-upgrade to a geospatial `latlong`+`radius` query, and tags the
   resolved metro key so feeds for that metro are picked up.
 - `src/merge.ts` — PURE result shaping: cross-source dedup (artist|date),
-  date sort, max-price filter, plus `canonical()` (the shared name-folding used by
-  the dedup key and venue matching) and `venueMatches()`.
+  intra-source dedup (`dedupeWithinSource`, artist|date|**time**), date sort,
+  max-price filter, plus `canonical()` (the shared name-folding used by both dedup
+  keys and venue matching) and `venueMatches()`.
+  **The two dedup keys differ on time, deliberately — don't unify them.** Across
+  sources, time is dropped: two sources describing one show format or omit it
+  inconsistently. Within one source, time is the whole point: a source listing the
+  same artist twice on a date at different times is usually two REAL shows (Eddie's
+  Attic runs a separate early and late show most nights — John Berry, 2026-07-25,
+  6:00 PM and 8:00 PM, two event ids). Dropping time there would collapse a
+  double-header and hide a bookable show. Run `dedupeWithinSource` on each source's
+  list BEFORE `mergeConcerts`, which assumes self-consistent inputs.
 - `src/types.ts` — Zod `Concert` schema = the typed output contract.
 - `src/format.ts` — pure formatters (price/date/time/result + source attribution,
   incl. the required `Powered by JamBase` line).

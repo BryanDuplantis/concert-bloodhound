@@ -39,22 +39,59 @@ still reads as absence.
 
 ## Live-validation findings (2026-06-25) — surfaced testing the Red Light feed end-to-end
 
-Four items from a live test pass against the running server. Items 1 and 2 carry a correctness
-cost; items 3 and 4 are UX/honesty gaps with no wrong-output. **Item 2 was originally filed in
-that second group and was wrong there** — see its entry; a confident false absence is a wrong
-answer. When triaging a "feature gap", ask whether the tool currently answers *incorrectly*
-rather than merely *incompletely*.
+Four items from a live test pass against the running server. **Both correctness items (1 and 2)
+are now FIXED — 3 and 4 remain open as UX/honesty gaps with no wrong-output.**
 
-1. **[CORRECTNESS — highest] ← NEXT ACTION (set 2026-06-25): fix this first. Intra-source duplicate survives the merge.** A Ticketmaster
-   relocation lists the SAME show twice (two event IDs) — e.g. smokedope2016 @ Tabernacle
-   2026-06-25 as "Moved to Tabernacle" (7pm) AND "Moved from Masquerade" (8pm). Both rows
-   survive because `mergeConcerts` dedups CROSS-source only (`mergeConcerts(mergeConcerts(tm,jb),feed)`);
-   two identical-artist|date rows WITHIN the TM array are never compared to each other. This
-   ships a genuinely wrong result (one show shown twice). Fix: dedup the TM array against
-   itself (or dedup the final merged set in one pass) on artist|date, keeping the earliest /
-   most-complete row. Distinct from the cross-source artist-order gap below — this is same
-   source, same artist string, and SHOULD collapse. Guard with a fixture test (two TM rows,
-   same artist|date, different event id/time → one survives).
+Two triage lessons, both earned the hard way in this section:
+- **Item 2 was filed as a feature gap with "no correctness cost" and that was wrong** — a
+  confident false absence is a wrong answer. When triaging a "feature gap", ask whether the
+  tool currently answers *incorrectly*, not merely *incompletely*.
+- **Item 1's stated mechanism was wrong, and its prescribed fix would have shipped a worse
+  bug** (see its entry). A backlog item's diagnosis ages faster than its symptom. Re-probe live
+  before implementing a fix filed three weeks earlier — the symptom was real, the cause wasn't.
+
+1. **[CORRECTNESS — highest] Intra-source duplicate survives the merge — ✅ FIXED 2026-07-16
+   (`dedupeWithinSource` in `src/merge.ts`).** Both rows survived because `mergeConcerts`
+   dedups CROSS-source only (`mergeConcerts(mergeConcerts(tm,jb),feed)`); two rows WITHIN the
+   TM array were never compared to each other. Now every source list is made self-consistent
+   before merging, in all three tools.
+
+   **The mechanism recorded here was WRONG, and the prescribed fix would have shipped a worse
+   bug. Read this before trusting a backlog premise.** As filed (2026-06-25) this said a TM
+   *relocation* lists one show twice at different times (smokedope2016 as "Moved to Tabernacle"
+   7pm / "Moved from Masquerade" 8pm), and prescribed dedup on **artist|date**, "keeping the
+   earliest / most-complete row." Live probe 2026-07-16 (50 Atlanta rows, window out to
+   2026-12-31):
+   - **Zero rows carried a "Moved" marker.** No relocation dupe was reproducible at all.
+   - **All 3 real collisions were ticketing-partner dupes**, not relocations: Eddie's Attic
+     sells through DICE, so TM's catalog carries a `link.dice.fm` row AND a native
+     `ticketmaster.com` row for one show — identical artist, date, **time**, venue,
+     availability, price, differing only by event id and link. The prescribed "keep the
+     earliest" tiebreak is a **no-op** on rows whose times are identical.
+   - **artist|date would have deleted real shows.** Eddie's Attic runs two separate,
+     separately-ticketed shows most nights (their own FAQ: the early and late shows "are
+     completely separate"). Live proof, same venue, found by testing through the stdio path:
+     **John Berry 2026-07-25 legitimately lists 6:00 PM AND 8:00 PM** (event ids
+     `…PNFs` / `…PNFw`, both native TM). artist|date collapses that double-header and hides a
+     show the user could have bought a ticket to — trading this bug for a false-consolidation
+     one, the same class as the false-absence bug item 2 just fixed.
+
+   **Shipped instead:** key on **artist|date|time**. Collapses all 3 partner dupes (verified
+   live: 3 collisions → 0, exactly 3 of 50 rows dropped, no over-collapse), preserves the
+   John Berry double-header, and needs no heuristic on upstream free text. Survivor = the most
+   complete copy (populated-field count, then longer name so a support act isn't dropped —
+   "Austin Meade with Cole Barnhill" beats "Austin Meade"), held at the first occurrence's
+   position for stable ordering. Consequence worth knowing: on an exact tie the incumbent wins,
+   and TM returns the DICE row first, so the partner link is what survives an identical pair.
+   A deliberate call — a hardcoded `ticketmaster.com` host preference was rejected because it
+   drops the support-act detail the partner row carries.
+
+   **Still not handled — relocation dupes, deliberately.** No live specimen exists to build
+   against, and by time alone a relocation pair is **indistinguishable from a double-header**;
+   only TM's "Moved to/from" name text separates them, which is fragile upstream free text.
+   Do NOT implement this blind. If a relocation pair is ever observed live, capture the rows
+   first, then decide — and note that "keep the earliest" would pick the wrong row anyway if
+   the show genuinely moved to a later slot.
 
 2. **[feature] No way to query a single open-feed venue — ✅ FIXED 2026-07-16 (`56fd07a`).**
    `search_by_venue` now consults the metro's open feeds alongside TM, matching feed events
