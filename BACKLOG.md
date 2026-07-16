@@ -5,10 +5,45 @@ not blocking it.
 
 ---
 
+## `search_by_artist` is single-source (tracked 2026-07-16)
+
+**[honesty / coverage] `search_by_artist` queries Ticketmaster ONLY** — it is the last tool
+where a single source decides the answer. `src/index.ts` (the `search_by_artist` handler) calls
+`searchEvents()` and nothing else, while `search_concerts` fans out to TM + JamBase + feeds via
+`Promise.allSettled` and `search_by_venue` covers TM + feeds since `56fd07a`. Untracked until
+now; recorded so it isn't rediscovered a fourth time.
+
+Two distinct gaps, different difficulty — do not conflate them:
+
+- **JamBase leg — mechanical, no product call needed.** JamBase events carry a real
+  `performer[]` with a headliner, so artist matching works the same way it does in
+  `search_concerts`. The original JamBase plan below explicitly said "wire both providers
+  (TM + JamBase) into `search_concerts` / `search_by_artist`" — only the first half landed
+  2026-05-25. This is unfinished work, not a deferred decision. Concrete cost: a JamBase-only
+  act (the free-festival / civic tail TM's catalog misses — the exact hole JamBase exists to
+  close) returns "not touring" from `search_by_artist` while `search_concerts` finds it.
+- **Feed leg — needs a product call first.** Feed events carry the post TITLE as the artist
+  ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer field. Matching an
+  artist against that means substring-matching a human-written headline, which either misses
+  (title formatting varies) or over-matches (a support act named in the title surfaces as a
+  headliner). `venueMatches()` is NOT the precedent to copy here — it resolves a human's typed
+  venue name against a venue string, where containment is the intended semantics. Artist-in-title
+  is a different problem. Decide the semantics before writing the matcher.
+
+The failure mode is the one `56fd07a` just fixed one tool over: a confident negative
+("They may not be touring that window") sourced from one provider's silence. The user-facing
+string already hedges to "aren't on Ticketmaster yet", which is honest about the source but
+still reads as absence.
+
+---
+
 ## Live-validation findings (2026-06-25) — surfaced testing the Red Light feed end-to-end
 
-Four items from a live test pass against the running server. **Only the first carries a
-correctness cost; the other three are feature/UX/honesty gaps with no wrong-output.**
+Four items from a live test pass against the running server. Items 1 and 2 carry a correctness
+cost; items 3 and 4 are UX/honesty gaps with no wrong-output. **Item 2 was originally filed in
+that second group and was wrong there** — see its entry; a confident false absence is a wrong
+answer. When triaging a "feature gap", ask whether the tool currently answers *incorrectly*
+rather than merely *incompletely*.
 
 1. **[CORRECTNESS — highest] ← NEXT ACTION (set 2026-06-25): fix this first. Intra-source duplicate survives the merge.** A Ticketmaster
    relocation lists the SAME show twice (two event IDs) — e.g. smokedope2016 @ Tabernacle
@@ -21,11 +56,15 @@ correctness cost; the other three are feature/UX/honesty gaps with no wrong-outp
    source, same artist string, and SHOULD collapse. Guard with a fixture test (two TM rows,
    same artist|date, different event id/time → one survives).
 
-2. **[feature] No way to query a single open-feed venue.** `search_by_venue` is TM-only, so
-   open-feed venues (Red Light, Cobb) are unreachable except buried inside a merged
-   `search_concerts` (where the result cap crowds them out past the first ~2 days). A
-   "list events from source/venue X" path would make "what's on at Red Light" a one-call
-   answer. No correctness cost — just not addressable today.
+2. **[feature] No way to query a single open-feed venue — ✅ FIXED 2026-07-16 (`56fd07a`).**
+   `search_by_venue` now consults the metro's open feeds alongside TM, matching feed events
+   via `venueMatches()` (canonical fold + containment). Reclassified on the way out: this was
+   filed as a feature gap with "no correctness cost", but it **was** a correctness bug — for a
+   feed-only room with no TM venue id (Red Light Café) the tool answered a confident "no
+   upcoming concerts listed" while `search_concerts` held two of its shows for the same window
+   (confirmed live). A false absence is a wrong answer, not a missing feature. Root cause of the
+   misfiling: `search_by_venue` had zero smoke coverage, so the false-absence was never observed.
+   Coverage added in the same commit.
 
 3. **[honesty] Feed-horizon under-representation is invisible.** An open-feed source with a
    short rolling window (Red Light's Squarespace RSS = ~20 most-recent posts, currently
@@ -111,17 +150,36 @@ as a "Jazz concert" is the over-classification failure mode AND violates "never 
 CATEGORIES exist in both but are useless (location tag / "Conservancy Events", no genre).
 The classifier idea isn't wrong; the *sources* were. Don't resurrect Battery/Piedmont.
 
-**Phase 3 (RSS) — NEXT, prerequisite RESOLVED.** Red Light Café, GA Tech Arts (actual
-music venues — the real long-tail) — adds an RSS/XML parser dep. **Genre-vocab question
-(Finding 4, 2026-06-25) RESOLVED: Option A — genre stays free-text; the open-feed layer
-NEVER infers genre.** Phase 3 RSS mirrors the proven Cobb pattern: surface events honestly
-with `genre: null`, gated out under a genre filter. No canonical vocab, no classifier, no
-inference — keeps the "never invent" line clean (this is why Phase 2's classifier idea was
-moot, not just its sources). The original brief's `genreSource`/B-compatible seam is moot
-while feeds assert no genre; if the web-app pivot later wants feed genres, build the
-canonical set then with full context. **Phase 3 build is now unblocked.** Given the Phase 2
-lesson (premise didn't survive recon), START PHASE 3 WITH RECON: confirm Red Light Café +
-GA Tech Arts feeds are genuine concert listings before adding the parser dep.
+**Phase 3 (RSS) — ✅ SHIPPED 2026-06-25 (`7e4bc00`), Red Light Café only.**
+Recon ran first (per the Phase 2 lesson) and split the two candidates cleanly — decision
+`2026-06-25-decision-concert-bloodhound-phase-3-recon-red-lig`.
+
+- **Red Light Café — BUILT.** Live in `src/feeds/registry.ts`. 20 items / 17 distinct,
+  music-majority: real indie long-tail TM won't carry. Build wrinkle handled: `pubDate` is
+  post-publish time, not event date — the real date lives only in the URL slug's trailing
+  `-mon-dd-yyyy`, extracted with a fixture-locked test and an honest `null` fallback.
+  Null-date events gate out (Bryan's call — a concert you can't date is noise, same logic as
+  null-genre). Tiny title denylist excludes the recurring Run or Walk Society running club.
+- **GA Tech Arts — KILLED 2026-06-25 by recon. Do NOT re-propose.** 203 items / 162 distinct,
+  music a ~17% MINORITY (28 music-signal vs 36 non-music vs 98 ambiguous — film festivals,
+  DramaTech theater, tango/salsa lessons, exhibitions). It's `term/12` "Arts & Performance",
+  a broad campus calendar with **no music category to filter on**. Pulling music out requires
+  exactly the SUMMARY-keyword classifier killed in Phase 2 — it can only stay silent or invent
+  concerts. Same verdict as Battery/Piedmont, same reason: the classifier idea isn't wrong,
+  the *source* is. **Recording the kill here is the point** — this entry previously still read
+  "Phase 3 — NEXT: Red Light Café, GA Tech Arts", and that stale line is why
+  `~/.second-brain-data/tasks/2026-05-23-concert-bloodhound-web-app-pivot.md` re-proposed GA
+  Tech as the next build step on 2026-07-16, three weeks after recon killed it.
+
+**Genre-vocab question (Finding 4, 2026-06-25) RESOLVED: Option A — genre stays free-text; the
+open-feed layer NEVER infers genre.** Feed events carry `genre: null` and gate out under a
+genre filter, mirroring the proven Cobb pattern. No canonical vocab, no classifier, no
+inference — keeps the "never invent" line clean. The original brief's `genreSource`/B-compatible
+seam is moot while feeds assert no genre; if the web-app pivot later wants feed genres, build the
+canonical set then with full context.
+
+**Parser:** `fast-xml-parser`, pinned (lean, no transitive deps; adding it was the
+M2-adjacent supply-chain moment — see the security residuals above).
 
 **Refinement noted.** Cobb's "Music & Concerts" category is broad — includes musicals
 ("Footloose"), comedy open mics, festivals alongside concerts. Honest (publisher's own
@@ -264,29 +322,37 @@ almost certainly OURS (we never migrated to the v3 API).** Facts established 5/2
 3. ~~Rotate the key to force a fresh plan↔key binding.~~ ✅ DONE 2026-05-25 — rotated
    to `…BwF2`; new key returns the **identical `api_key_inactive`**. Eliminated.
 4. ~~JamBase support ticket.~~ ON HOLD 2026-05-25 — premature; we hadn't read the docs.
-5. **← ACTIVE PATH: migrate the client to the JamBase v3 Data API.** Get the verbatim
-   request example from the authenticated Request Builder (`data.jambase.com/api/docs/
-   request-builder`): exact v3 origin/host, `Authorization: Bearer` format, and confirm
-   the dashboard key is the right credential. Then update `src/jambase.ts` (BASE +
-   header auth, drop the `apikey` query param) and re-probe. Only if a correct v3 call
-   STILL fails does the support ticket come off hold.
+5. ~~Migrate the client to the JamBase v3 Data API.~~ ✅ DONE 2026-05-25 — this WAS the
+   root cause. `src/jambase.ts` moved to origin `https://api.data.jambase.com/v3` with
+   `Authorization: Bearer` header auth and the `apikey` query param dropped; a correct v3
+   call returns 40 real Atlanta events. Support ticket obsolete, never sent — the whole
+   two-day "blocked" saga was our own un-migrated client. **Nothing on this list is active;
+   the JamBase blocker is closed.**
 
-**Then (once `npm run smoke:jambase` returns a real Atlanta event):**
-- Finalize `normalizeJamBaseEvent` in `src/jambase.ts` against the dumped live
-  event shape (verify the location/address/performer/offers/startDate/eventStatus
-  paths and the `searchEvents` param names).
+**Then (once `npm run smoke:jambase` returns a real Atlanta event) — ✅ ALL DONE 2026-05-25
+EXCEPT the `search_by_artist` leg.** Kept as the record of what this plan promised; the one
+line that never landed is now tracked as its own item at the top of this file.
+- ~~Finalize `normalizeJamBaseEvent` in `src/jambase.ts` against the dumped live
+  event shape.~~ ✅ DONE — validated against the live shape (festival-name headlines,
+  ISO/date-only split, headliner-only genre, empty `priceSpecification` → null price).
 - Wire both providers (TM + JamBase) into `search_concerts` / `search_by_artist`:
-  parallel fetch, cross-source dedupe (artist + date + venue key),
-  "Powered by JamBase" attribution in the footer. `search_by_venue` stays
-  Ticketmaster-only.
-- Live-verify an Atlanta search surfaces a JamBase-sourced event
-  (e.g. Atlanta Jazz Fest) with attribution. That is the positive signal.
+  parallel fetch, cross-source dedupe, "Powered by JamBase" attribution.
+  **HALF-DONE — this is the drift.** `search_concerts` ✅ (TM + JamBase + feeds via
+  `Promise.allSettled`, dedup on artist|date, attribution live). **`search_by_artist` ✗ —
+  never wired, still TM-only.** Tracked at the top of this file.
+  ~~`search_by_venue` stays Ticketmaster-only.~~ **NO LONGER TRUE — superseded 2026-07-16
+  (`56fd07a`):** `search_by_venue` now covers TM + the metro's open feeds. It had to change,
+  because a feed-only room has no TM venue id, so TM's silence was being reported as the
+  venue having no shows.
+- ~~Live-verify an Atlanta search surfaces a JamBase-sourced event with attribution.~~
+  ✅ DONE — `npm run smoke:mcp` surfaces the Atlanta Jazz Festival with attribution.
   **Gap confirmed 2026-05-23:** Ticketmaster ALONE does NOT carry the Atlanta
   Jazz Festival (the free Piedmont Park Memorial Day event) — verified empty via
   general Atlanta search, `genre=Jazz`, and `keyword="Atlanta Jazz Festival"`.
   Free/non-ticketed festivals aren't in TM's Discovery catalog. Surfacing the
   Jazz Fest is therefore the concrete payoff of the JamBase source — this is the
-  exact coverage hole it closes.
+  exact coverage hole it closes, and the reason the missing `search_by_artist` leg
+  has a real cost rather than being cosmetic.
 
 **Refs.** LIVE v3 client: origin `https://api.data.jambase.com/v3`, auth
 `Authorization: Bearer <key>` (see `src/jambase.ts`). Source map:
