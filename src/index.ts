@@ -6,13 +6,20 @@ import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
 import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
 import { fetchMetroFeeds } from "./feeds/index.js";
-import { applyDateWindow, applyMaxPrice, byDateAsc, dedupeWithinSource, mergeConcerts, venueMatches } from "./merge.js";
+import {
+  applyDateWindow,
+  applyMaxPrice,
+  byDateAsc,
+  dedupeWithinSource,
+  mergeConcerts,
+  toEnd,
+  toStart,
+  venueMatches,
+} from "./merge.js";
 import { resultShape, type Concert } from "./types.js";
 import { formatResults } from "./format.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const toStart = (d?: string) => (d ? `${d}T00:00:00Z` : undefined);
-const toEnd = (d?: string) => (d ? `${d}T23:59:59Z` : undefined);
 
 /** Default metro radius when a city resolves to coordinates. */
 const DEFAULT_RADIUS_MI = 30;

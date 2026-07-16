@@ -274,19 +274,30 @@ neighbouring genre (Death Angel under Metal → surfaces on a Rock search); plus
 
 **Open (not blocking):** (1) **artist-NAME divergence** ("mgk" vs "Machine Gun
 Kelly") can slip a dupe — DELIBERATELY not fixed: fuzzy artist matching risks merging
-distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain. (2) **Date
-window last-day**: TM can still OMIT a late-night show on the window's last local day
-(UTC end cuts off before local midnight) — needs a tz-aware query, not just the
-client trim. **No longer theoretical — LIVE REPRO found 2026-07-16:** John Berry plays
-Eddie's Attic 2026-07-25 at 18:00 AND 20:00 (a real double-header, two event ids). With
-`endDate: "2026-07-25"` the tool returns ONLY the 18:00 show — the 20:00 EDT show is
-00:00 UTC on 07-26, past the UTC end bound. `endDate: "2026-07-26"` returns both. So a
-user asking "what's at Eddie's Attic through the 25th" is silently shown half the night's
-lineup. This is a false absence on the *last day of every dated window*, the same class
-as the bug `56fd07a` fixed, and it is the highest-value item left in this file — it wrongs
-the answer, where (1) and (3) only narrow it. Falsifier for any fix: that query must
-return both times. (3) **Genre-aware JamBase** scans page-1 only and won't bridge taxonomy
-gaps (a "R&B" request misses "rhythm-and-blues-soul").
+distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gain. (2) ~~**Date
+window last-day**: TM can still OMIT a late-night show on the window's last local day.~~
+**✅ FIXED 2026-07-16 — and it was FAR worse than this entry described.** `toEnd` sent an
+exact-looking `${end}T23:59:59Z`; EDT is UTC-4, so on the window's last local day EVERY
+show from 20:00 onward crossed into the next UTC day and TM never returned it. Not "a
+late-night show" — most of a music venue's evening. Measured live: "what's at Eddie's
+Attic on 2026-07-25" (single-day window, the worst case since every show sits on the last
+day) returned **1 of 3 shows** — John Berry 18:00 came back while John Berry 20:00 and
+Erik Vincent Huey 22:00 were both silently dropped, with nothing signalling the absence.
+Fix: `toEnd` now pads +1 day (covers every real-world UTC offset; the westernmost, UTC-12,
+puts a local 23:59 at D+1 11:59Z) and `applyDateWindow` trims the over-fetch back by local
+date — fetch generously in UTC, trim precisely in local. Safe against the result cap
+because TM sorts `date,asc`, so the pad's extra events sort last and only fill leftover
+slots. `toStart` is deliberately NOT padded: for US (negative) offsets a UTC-midnight start
+already precedes local midnight, so it over-fetches rather than omits, and padding it would
+cost real results (earlier events sort FIRST, consuming the cap, then get trimmed). The
+bounds now live in `merge.ts` beside `applyDateWindow` — they are two halves of one
+invariant and drift apart if separated. Falsifier (verified): `search_by_venue "Eddie's
+Attic" endDate: "2026-07-25"` returns BOTH 18:00 and 20:00, with 0 rows outside the window.
+**Latent residual — the mirror bug, unfixed:** a positive-offset venue (UTC+14, reachable
+only via explicit `latlong`/`countryCode`, not the US-only metro table) can have an early
+show on the START date fall before the unpadded start bound. No live specimen; the metro
+table can't reach one. (3) **Genre-aware JamBase** scans page-1 only and won't bridge
+taxonomy gaps (a "R&B" request misses "rhythm-and-blues-soul").
 
 **✅ THE WORKING RECIPE (verified 2026-05-25 with the rotated `…BwF2` key):**
 - **Origin:** `https://api.data.jambase.com/v3`  (NOT `www.jambase.com/jb-api/v3`)

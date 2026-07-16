@@ -38,9 +38,12 @@ risks merging distinct acts ("Eagles" vs "Eagles of Death Metal") for a rare gai
 dupe until `canonical()` folded accents/quote-forms/dashes into the dedup key.
 Canonicalization is not fuzzy matching — it reconciles encodings of the same
 characters, so the Eagles guard still holds (unit-tested both ways).
-(2) Date window: TM can still omit a late-night show on the window's LAST local day
-(its UTC end cuts off before local midnight) — needs a tz-aware query, not just the
-client trim. (3) Genre-aware JamBase only scans page-1 events and won't bridge
+(2) Date window last-day omission — **FIXED 2026-07-16** (`toEnd` pads +1 day, the trim
+reels it back; see `merge.ts`). It was far worse than "a late-night show": EDT is UTC-4,
+so on the window's last local day every show from 20:00 on was dropped server-side —
+a single-day Eddie's Attic query returned 1 of 3 shows. Residual: the mirror case at a
+positive-offset venue (UTC+14 via explicit latlong) is unfixed and has no live specimen.
+(3) Genre-aware JamBase only scans page-1 events and won't bridge
 taxonomy gaps (a "R&B" request misses "rhythm-and-blues-soul"). **Lesson logged:**
 read the vendor's current API docs BEFORE theorizing about why auth fails.
 ---
@@ -80,9 +83,17 @@ SUMMARY classifier, no canonical vocab.
   `city` search auto-upgrade to a geospatial `latlong`+`radius` query, and tags the
   resolved metro key so feeds for that metro are picked up.
 - `src/merge.ts` — PURE result shaping: cross-source dedup (artist|date),
-  intra-source dedup (`dedupeWithinSource`, artist|date|**time**), date sort,
-  max-price filter, plus `canonical()` (the shared name-folding used by both dedup
-  keys and venue matching) and `venueMatches()`.
+  intra-source dedup (`dedupeWithinSource`, artist|date|**time**), the TM query
+  bounds (`toStart`/`toEnd`) paired with `applyDateWindow`, date sort, max-price
+  filter, plus `canonical()` (the shared name-folding used by both dedup keys and
+  venue matching) and `venueMatches()`.
+  **The date-window invariant: fetch generously in UTC, trim precisely in local.**
+  TM filters on a UTC instant; a Concert's `date` is the event's LOCAL date, and the
+  two disagree by the venue's offset — so any bound exact in UTC is wrong in local
+  time. `toEnd` overshoots a day and `applyDateWindow` reels it back. Keep the three
+  together; widening a bound without the trim leaks, tightening one without the other
+  drops real shows. `toStart` is unpadded on purpose — the asymmetry is documented at
+  the source.
   **The two dedup keys differ on time, deliberately — don't unify them.** Across
   sources, time is dropped: two sources describing one show format or omit it
   inconsistently. Within one source, time is the whole point: a source listing the

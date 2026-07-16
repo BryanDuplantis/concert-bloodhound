@@ -15,16 +15,54 @@ export function applyMaxPrice(concerts: Concert[], maxPrice?: number): Concert[]
 }
 
 /**
+ * Shift a YYYY-MM-DD by whole days. Anchored at UTC noon so the arithmetic can't
+ * be dragged across a date boundary by a DST-shifted local midnight.
+ */
+function shiftDay(day: string, n: number): string {
+  const t = new Date(`${day}T12:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * The Ticketmaster query bounds, paired with `applyDateWindow` below. One
+ * invariant across the three of them: **fetch generously in UTC, trim precisely
+ * in local.** TM filters server-side on a UTC instant, but a Concert's `date` is
+ * the event's LOCAL date — the two disagree by the venue's offset, so any bound
+ * tight enough to be exact in UTC is wrong in local time. Keep these together;
+ * widening a bound without the trim leaks, tightening one without the other drops
+ * real shows.
+ *
+ * `toEnd` deliberately overshoots by a day. Its old exact-looking
+ * `${end}T23:59:59Z` silently omitted late shows on the window's LAST local day:
+ * a 20:00 EDT show is 00:00 UTC the NEXT day, past the bound, so TM never
+ * returned it. Live specimen — John Berry at Eddie's Attic 2026-07-25 plays 18:00
+ * AND 20:00; with `endDate: "2026-07-25"` only the 18:00 show came back, and
+ * nothing signalled the other was missing. A false absence on the last day of
+ * every dated window. +1 day covers every real-world UTC offset (the westernmost,
+ * UTC-12, puts a local 23:59 at D+1 11:59Z); `applyDateWindow` then drops whatever
+ * the pad over-fetched. Safe against the result cap because TM sorts date,asc —
+ * the extra day's events sort last and only fill leftover slots.
+ *
+ * `toStart` is deliberately NOT padded, and the asymmetry is real. For US venues
+ * (every negative offset) a UTC midnight start is already EARLIER than local
+ * midnight, so it over-fetches the previous local evening — a leak the trim
+ * handles, not an omission. Padding it would cost real results: earlier events
+ * sort FIRST under date,asc, so they'd consume slots and then be trimmed away.
+ * Latent gap: a positive-offset venue (UTC+14 reached via explicit latlong or
+ * countryCode) can have an early show on the start date fall before this bound —
+ * the mirror of the bug fixed above, unreachable through the US-only metro table.
+ */
+export const toStart = (d?: string): string | undefined => (d ? `${d}T00:00:00Z` : undefined);
+export const toEnd = (d?: string): string | undefined =>
+  d ? `${shiftDay(d, 1)}T23:59:59Z` : undefined;
+
+/**
  * Trim results to a [start, end] window by each event's own LOCAL date — the
- * authoritative field. Ticketmaster's server-side filter is built from UTC
- * midnight (toStart/toEnd), so a late-evening local show on the day before the
- * window leaks in (an 8 PM EDT show on the 28th is 00:00 UTC on the 29th); this
- * drops it. JamBase/feeds already filter by local date, so it's a no-op for them.
- * Undated events are dropped when a window is set — a dated search shouldn't
+ * authoritative field, and the half of the invariant above that makes the padded
+ * UTC bounds safe. JamBase/feeds already filter by local date, so it's a no-op for
+ * them. Undated events are dropped when a window is set — a dated search shouldn't
  * surface an event we can't place in the window. No bounds → unchanged.
- * (Residual: TM can still omit a late-night show on the window's LAST local day,
- * since its UTC end cuts off before local midnight — that needs a tz-aware query,
- * tracked in BACKLOG; this helper only trims, it can't recover an omitted event.)
  */
 export function applyDateWindow(concerts: Concert[], start?: string, end?: string): Concert[] {
   if (!start && !end) return concerts;

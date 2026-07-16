@@ -12,6 +12,8 @@ import {
   canonical,
   dedupeWithinSource,
   mergeConcerts,
+  toEnd,
+  toStart,
   venueMatches,
 } from "./merge.js";
 import type { Concert } from "./types.js";
@@ -101,6 +103,41 @@ test("byDateAsc orders earliest first, undated last", () => {
   const c = concert({ date: null });
   const sorted = [a, c, b].sort(byDateAsc);
   assert.deepEqual(sorted.map((x) => x.date), ["2026-06-01", "2026-07-10", null]);
+});
+
+test("toEnd pads a day so a late local show on the last day survives TM's UTC bound", () => {
+  // The live bug: John Berry 2026-07-25 20:00 EDT is 2026-07-26T00:00Z, which the
+  // old `${end}T23:59:59Z` bound excluded server-side. The pad must reach past it.
+  assert.equal(toEnd("2026-07-25"), "2026-07-26T23:59:59Z");
+  assert.ok(new Date("2026-07-26T00:00:00Z") < new Date(toEnd("2026-07-25")!));
+  // Westernmost real offset (UTC-12): a local 23:59 on the 25th is 11:59Z on the 26th.
+  assert.ok(new Date("2026-07-26T11:59:59Z") < new Date(toEnd("2026-07-25")!));
+  assert.equal(toEnd(undefined), undefined);
+});
+
+test("toEnd rolls over month and year boundaries", () => {
+  // Pure string concat would produce "2026-07-32" / "2026-13-01" here.
+  assert.equal(toEnd("2026-07-31"), "2026-08-01T23:59:59Z");
+  assert.equal(toEnd("2026-12-31"), "2027-01-01T23:59:59Z");
+  assert.equal(toEnd("2028-02-28"), "2028-02-29T23:59:59Z"); // leap year
+  assert.equal(toEnd("2026-02-28"), "2026-03-01T23:59:59Z"); // non-leap
+});
+
+test("toStart is deliberately unpadded", () => {
+  // Padding it would cost real results: earlier events sort first under date,asc,
+  // consume the result cap, then get trimmed away. For US (negative) offsets a UTC
+  // midnight start already precedes local midnight, so it over-fetches, never omits.
+  assert.equal(toStart("2026-07-18"), "2026-07-18T00:00:00Z");
+  assert.equal(toStart(undefined), undefined);
+});
+
+test("applyDateWindow trims back what toEnd's pad over-fetches", () => {
+  // The two halves of the invariant, exercised together: the pad lets TM return
+  // the next local day, and the trim is what keeps it out of the answer.
+  const lastDayLate = concert({ date: "2026-07-25", time: "20:00:00" });
+  const nextDay = concert({ date: "2026-07-26", time: "19:00:00" }); // only here because of the pad
+  const out = applyDateWindow([lastDayLate, nextDay], "2026-07-18", "2026-07-25");
+  assert.deepEqual(out, [lastDayLate]);
 });
 
 test("applyDateWindow drops events outside the local-date window", () => {
