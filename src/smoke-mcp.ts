@@ -46,14 +46,42 @@ async function main() {
   })) as ToolResult;
   console.log("\n[Atlanta — metro geospatial]\n" + textOf(atlanta));
 
+  // 3) Feed-only venue: Red Light Café exists in the open-feed layer, not in
+  //    Ticketmaster's event catalog. Guards the false-absence bug — search_by_venue
+  //    once answered "no upcoming concerts listed" while the feeds held its shows.
+  //    Also exercises the ASCII query → accented feed venue match ("Cafe" → "Café").
+  const redlight = (await client.callTool({
+    name: "search_by_venue",
+    arguments: { venue: "Red Light Cafe", city: "Atlanta", size: 5 },
+  })) as ToolResult;
+  console.log("\n[Red Light Café — feed-only venue]\n" + textOf(redlight));
+
   await client.close();
 
-  if (failed(chicago) || failed(atlanta)) {
+  const redlightText = textOf(redlight);
+  // Feeds publish their whole calendar with no server-side lower bound, so an
+  // undated search must still never answer with a past show.
+  const staleDates = [...redlightText.matchAll(/^\s*Date: \w+, (\w+ \d+, \d{4})$/gm)]
+    .map((m) => new Date(m[1]).toLocaleDateString("en-CA"))
+    .filter((d) => d < new Date().toLocaleDateString("en-CA"));
+  const redlightFailed =
+    !!redlight.isError ||
+    /no upcoming concerts are currently listed|couldn't find a venue/i.test(redlightText) ||
+    !/Red Light/i.test(redlightText) ||
+    staleDates.length > 0;
+
+  if (failed(chicago) || failed(atlanta) || redlightFailed) {
     console.error("❌ MCP smoke failed: a tool call did not return live concerts.");
+    if (redlightFailed && staleDates.length > 0) {
+      console.error(`   search_by_venue returned past-dated shows as upcoming: ${staleDates.join(", ")}`);
+    } else if (redlightFailed) {
+      console.error("   search_by_venue returned no Red Light Café shows — the feed layer is not reaching it.");
+    }
     process.exit(1);
   }
   console.error(
-    "✅ MCP smoke passed: tools registered; city text + metro-geospatial searches both returned live concerts over stdio.",
+    "✅ MCP smoke passed: tools registered; city text + metro-geospatial searches returned live concerts, " +
+      "and search_by_venue surfaced a feed-only venue, all over stdio.",
   );
 }
 

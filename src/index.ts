@@ -6,7 +6,7 @@ import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
 import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
 import { fetchMetroFeeds } from "./feeds/index.js";
-import { applyDateWindow, applyMaxPrice, byDateAsc, mergeConcerts } from "./merge.js";
+import { applyDateWindow, applyMaxPrice, byDateAsc, mergeConcerts, venueMatches } from "./merge.js";
 import { resultShape, type Concert } from "./types.js";
 import { formatResults } from "./format.js";
 
@@ -16,6 +16,14 @@ const toEnd = (d?: string) => (d ? `${d}T23:59:59Z` : undefined);
 
 /** Default metro radius when a city resolves to coordinates. */
 const DEFAULT_RADIUS_MI = 30;
+
+/**
+ * Today's LOCAL date as YYYY-MM-DD. Open feeds carry their whole published
+ * calendar, past events included, and unlike the Ticketmaster API they have no
+ * server-side lower bound — so an undated "upcoming" search needs one applied
+ * here or last week's shows surface as upcoming.
+ */
+const todayLocal = () => new Date().toLocaleDateString("en-CA");
 
 /**
  * Decide whether to search geospatially. An explicit `latlong` wins; otherwise a
@@ -229,7 +237,8 @@ server.registerTool(
     title: "Search Concerts by Venue",
     description:
       "Find upcoming concerts at a specific venue. Looks the venue up by name (add a city to disambiguate), then lists " +
-      "its upcoming events. Real listings only — absent fields are reported as 'not listed'.",
+      "its upcoming events from Ticketmaster plus any open calendar feeds covering that metro — so venues that exist " +
+      "only in an open feed are found too. Real listings only — absent fields are reported as 'not listed'.",
     inputSchema: {
       venue: z.string().min(1).describe("Venue name, e.g. 'Red Rocks', 'The Fillmore'"),
       city: z.string().optional().describe("City to disambiguate the venue"),
@@ -243,33 +252,73 @@ server.registerTool(
   },
   async (args) => {
     const want = args.size ?? 10;
+
+    // The venue lookup is Ticketmaster's, but the answer isn't: a feed-only room
+    // (Red Light Café) has no TM venue id, so a TM miss or outage must not
+    // suppress the feeds — it would report a confident "nothing listed" for a
+    // venue whose shows we hold. Degrade per-source, exactly like search_concerts.
+    let venue: Awaited<ReturnType<typeof findVenue>> = null;
+    let venueErr: string | null = null;
     try {
-      const venue = await findVenue(args.venue, args.city);
-      if (!venue) {
-        return fail(
+      venue = await findVenue(args.venue, args.city);
+    } catch (e) {
+      venueErr = errMsg(e);
+      console.error(`Ticketmaster venue lookup failed: ${venueErr}`);
+    }
+
+    // Feeds key off a metro, not a venue id. Prefer the caller's city; fall back
+    // to whatever city TM matched.
+    const geo = resolveGeo(undefined, args.city ?? venue?.city ?? undefined);
+
+    const [tmRes, feedRes] = await Promise.allSettled([
+      venue
+        ? searchEvents({
+            venueId: venue.id,
+            startDateTime: toStart(args.startDate),
+            endDateTime: toEnd(args.endDate),
+            size: Math.min(Math.max(want, 20), 50),
+          })
+        : Promise.resolve([] as Concert[]),
+      geo?.metroKey
+        ? fetchMetroFeeds(geo.metroKey, {
+            start: args.startDate ?? todayLocal(),
+            end: args.endDate,
+          })
+        : Promise.resolve([] as Concert[]),
+    ]);
+
+    const tm = tmRes.status === "fulfilled" ? tmRes.value : [];
+    if (tmRes.status === "rejected") console.error(`Ticketmaster failed: ${errMsg(tmRes.reason)}`);
+    const feed = (feedRes.status === "fulfilled" ? feedRes.value : []).filter((c) =>
+      venueMatches(c.venue, args.venue),
+    );
+    if (feedRes.status === "rejected") console.error(`Feeds failed: ${errMsg(feedRes.reason)}`);
+
+    // Only now is "no such venue" honest — every source has been consulted.
+    if (!venue && feed.length === 0) {
+      return fail(
+        venueErr ??
           `I couldn't find a venue matching "${args.venue}"${
             args.city ? ` in ${args.city}` : ""
           }. Try the full venue name or add a city.`,
-        );
-      }
-      const raw = await searchEvents({
-        venueId: venue.id,
-        startDateTime: toStart(args.startDate),
-        endDateTime: toEnd(args.endDate),
-        size: Math.min(Math.max(want, 20), 50),
-      });
-      const windowed = applyDateWindow(raw, args.startDate, args.endDate);
-      const results = applyMaxPrice(windowed, args.maxPrice).slice(0, want);
-      const label = venue.city ? `${venue.name} (${venue.city})` : venue.name;
-      const summary = results.length
-        ? `Here ${results.length === 1 ? "is an" : "are"} upcoming concert${
-            results.length === 1 ? "" : "s"
-          } at ${label}:`
-        : `I found ${label}, but no upcoming concerts are currently listed there for that window.`;
-      return ok(results, summary);
-    } catch (e) {
-      return fail(errMsg(e));
+      );
     }
+    if (tmRes.status === "rejected" && feed.length === 0) return fail(errMsg(tmRes.reason));
+
+    const merged = mergeConcerts(tm, feed);
+    const windowed = applyDateWindow(merged, args.startDate, args.endDate);
+    const results = applyMaxPrice(windowed, args.maxPrice).sort(byDateAsc).slice(0, want);
+    const label = venue
+      ? venue.city
+        ? `${venue.name} (${venue.city})`
+        : venue.name
+      : (feed[0]?.venue ?? args.venue);
+    const summary = results.length
+      ? `Here ${results.length === 1 ? "is an" : "are"} upcoming concert${
+          results.length === 1 ? "" : "s"
+        } at ${label}:`
+      : `I found ${label}, but no upcoming concerts are currently listed there for that window.`;
+    return ok(results, summary);
   },
 );
 

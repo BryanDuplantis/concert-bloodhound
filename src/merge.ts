@@ -69,6 +69,23 @@ export function canonical(s: string): string {
 }
 
 /**
+ * Does a feed event's venue answer a user's venue query?
+ *
+ * Unlike `mergeConcerts` — which refuses venue comparison because two SOURCES
+ * format the same room irreconcilably — the query here is a human's typed name.
+ * Matching a person's "Red Light Cafe" against a feed's "Red Light Café" is
+ * intent resolution, not source reconciliation, so containment either way is
+ * appropriate. The 3-char floor keeps a stray short query from matching broadly.
+ */
+export function venueMatches(eventVenue: string | null, query: string): boolean {
+  if (!eventVenue) return false;
+  const v = canonical(eventVenue);
+  const q = canonical(query);
+  if (!v || q.length < 3) return false;
+  return v === q || v.includes(q) || q.includes(v);
+}
+
+/**
  * Merge supplementary events (JamBase, open feeds) into the primary
  * (Ticketmaster) list, dropping cross-source duplicates. The primary source wins
  * — it carries the price, availability, and ticket links the others don't.

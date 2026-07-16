@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyDateWindow, applyMaxPrice, byDateAsc, canonical, mergeConcerts } from "./merge.js";
+import { applyDateWindow, applyMaxPrice, byDateAsc, canonical, mergeConcerts, venueMatches } from "./merge.js";
 import type { Concert } from "./types.js";
 
 function concert(p: Partial<Concert>): Concert {
@@ -154,4 +154,13 @@ test("mergeConcerts still keeps genuinely different acts apart", () => {
   const tm = [concert({ artists: ["Eagles"], date: "2026-07-17" })];
   const jb = [concert({ artists: ["Eagles of Death Metal"], date: "2026-07-17", source: "JamBase" })];
   assert.equal(mergeConcerts(tm, jb).length, 2);
+});
+
+test("venueMatches resolves a typed query against feed venue formatting", () => {
+  assert.ok(venueMatches("Red Light Café", "Red Light Cafe")); // the false-absence bug
+  assert.ok(venueMatches("Red Light Café", "red light cafe"));
+  assert.ok(venueMatches("Red Light Café", "Red Light")); // partial typed name
+  assert.ok(!venueMatches("Red Light Café", "Eddie's Attic"));
+  assert.ok(!venueMatches(null, "Red Light Cafe"));
+  assert.ok(!venueMatches("Red Light Café", "ab")); // under the 3-char floor
 });

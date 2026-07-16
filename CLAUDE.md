@@ -80,8 +80,8 @@ SUMMARY classifier, no canonical vocab.
   `city` search auto-upgrade to a geospatial `latlong`+`radius` query, and tags the
   resolved metro key so feeds for that metro are picked up.
 - `src/merge.ts` — PURE result shaping: cross-source dedup (artist|date),
-  date sort, max-price filter, plus `canonical()` — the name-folding behind the
-  dedup key.
+  date sort, max-price filter, plus `canonical()` (the shared name-folding used by
+  the dedup key and venue matching) and `venueMatches()`.
 - `src/types.ts` — Zod `Concert` schema = the typed output contract.
 - `src/format.ts` — pure formatters (price/date/time/result + source attribution,
   incl. the required `Powered by JamBase` line).
@@ -91,8 +91,17 @@ SUMMARY classifier, no canonical vocab.
 
 ## Tools
 - `search_concerts` — city / genre / date range / max price.
-- `search_by_artist` — artist (+ optional location / dates / price).
-- `search_by_venue` — venue lookup → its upcoming events.
+- `search_by_artist` — artist (+ optional location / dates / price). **Ticketmaster
+  only** — open feeds are not wired in (feed events carry the title as the artist,
+  so artist matching there needs a product call first).
+- `search_by_venue` — venue lookup → its upcoming events, from Ticketmaster **and**
+  the metro's open feeds (2026-07-16). The feed leg is not optional: a feed-only
+  room (Red Light Café) has no TM venue id, so a TM miss or outage must not decide
+  the answer — it previously reported a confident "no upcoming concerts listed"
+  for a venue whose shows the feeds held. Feed events are matched to the query via
+  `venueMatches` (canonical fold + containment): the query is a human's typed name,
+  which is intent resolution, NOT the cross-source venue reconciliation
+  `mergeConcerts` deliberately refuses.
 
 `search_concerts` and `search_by_artist` resolve a known metro (or an explicit
 `latlong`) to a geospatial `latlong`+`radius` search (default 30 mi) covering the
