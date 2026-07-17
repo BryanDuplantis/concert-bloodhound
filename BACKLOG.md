@@ -296,11 +296,44 @@ Cobb Travel & Tourism iCal wired for the Atlanta metro, filtered to its own
 a TM outage. Verified: `npm run smoke:feeds` returns 7 live Cobb music events TM
 doesn't carry; merge + parser unit-tested.
 
-**Finding — Localist (GSU/KSU) is dead in summer.** University recital calendars
-publish near-term; in late May they return ~0 music events. `venue_id` filtering is
-also broken on the v2 API (returns `total=1`/`events:[]`). Revisit in fall (Aug+);
-filter by place id (GSU Kopleff `272271` / KSU Bailey `31678877210426`) via
-client-side venue-name match, NOT `keyword`/`search` (both return non-music noise).
+**Localist (GSU/KSU) — RESOLVED 2026-07-17: GSU ✅ WIRED, KSU ❌ KILLED.** The
+fall gate ("dead in summer", filed 2026-05-25) was re-probed live per PM-57 and had
+expired early — both instances now publish fall semesters (GSU 573 instances
+Aug–Dec, KSU 267).
+
+- **GSU — WIRED** (`src/feeds/gsu.ts`, registry `gsu-localist`, `type: "localist"`).
+  **The filed prescription (client-side venue-name match on Kopleff, because
+  `venue_id` filtering is broken) is superseded** — GSU tags its own events with a
+  fine-arts category **"Music Concerts"** (`event_fine_arts_events` id
+  `52620491419918`), and `type[]=<id>` filters SERVER-side: 17 fall events, one
+  page, exactly matching a client-side extraction over all 573. That's the Cobb
+  pattern one rung better (publisher's own label, no classifier), and it beats the
+  venue route on precision — venue-scoped listings include recruiting events
+  ("Music Major for a Day") GSU itself does NOT tag as concerts. Control tests: a
+  garbage filter id **400s loud** ("Unknown event filter" — never a silent
+  unfiltered firehose, the JamBase `genreSlug` property), and a valid-but-empty
+  window returns a clean `events:[]`. Belt to that suspender: every returned event
+  is re-verified client-side to carry a music tag (reading the publisher's label —
+  the inverse of PM-47), so correctness never depends on the server honoring the
+  param. **Deliberate divergence from the Freshtix pattern: empty parse is VALID**
+  (a university calendar is legitimately empty out of semester — the very reason
+  this was fall-gated); drift alarms are the HTTP 400 and a missing `events` array.
+  Fetches a fixed year-ahead window so `horizon` reflects the calendar's published
+  reach; trims to the caller's window client-side. `ticket_cost` is multi-tier free
+  text ("$50, $60, $70, $90") — rides as a labeled `Tickets:` line in
+  `description`, never parsed into price fields (the item-4 rule). Verified live:
+  8 new offline tests (117 total green); `smoke:feeds` = 29 GSU events;
+  behavioral pass over stdio — `search_by_venue "Rialto Center for the Arts"`
+  renders Béla Fleck 9/17 / Take 6 10/2 / Joshua Redman 10/16 with Details blocks,
+  `"Kopleff Recital Hall"` renders the faculty showcase + recital slate.
+- **KSU — KILLED.** Zero music-keyword titles across its ENTIRE Aug–Dec window
+  (267 instances); Bailey Performance Center absent from every `location_name`;
+  and per PM-48 the kill was scoped past the URL — arts.kennesaw.edu, musicksu.com
+  and kin all redirect to brochure pages carrying no machine feed of any kind
+  (0 matches for ics/rss/webcal/trumba/localist). KSU's music program simply does
+  not publish performances to the university Localist. **Falsifier for revisiting:**
+  Bailey PC events appearing in a `calendar.kennesaw.edu/api/2/events` fall-window
+  probe, or a machine feed appearing on the arts/music pages.
 
 **Phase 2 (Battery ATL + Piedmont Park) — KILLED 2026-06-25 (recon), do NOT re-propose.**
 Live recon of both feeds (Battery Trumba `atlbrv.ics` 121 events / 12 distinct titles;
@@ -362,8 +395,9 @@ not survive. The MCP absorbed the tail the pivot was invented to catch._
 2026-07-17 — the table's per-row markers are now authoritative).** Of the map's
 10 sources: JamBase, TM-latlong, Cobb iCal, Red Light RSS all WIRED into the MCP;
 The EARL (filed "scrape-required") wired 2026-07-17 via the Freshtix HTML parser;
-Battery / Piedmont / GA Tech KILLED by recon 6/25; KSU/GSU Localist fall-gated
-(Aug+); Emory KILLED 2026-07-17 (below). Nothing in Tier 1 is left to build.
+Battery / Piedmont / GA Tech KILLED by recon 6/25; GSU Localist WIRED + KSU
+Localist KILLED 2026-07-17 (gate re-probed early — see the Localist entry above);
+Emory KILLED 2026-07-17 (below). Nothing in Tier 1 is left to build.
 
 **Emory / Schwartz Center — KILLED 2026-07-17 by recon. Do NOT re-propose as
 filed.** The mapped `ec-events.ics` is a GENERAL university calendar, not the

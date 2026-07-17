@@ -95,10 +95,19 @@ SUMMARY classifier, no canonical vocab.
   the city's own calendar page is client-rendered; parses BOTH series from news
   posts' `Month D – Artist<br/>blurb` format, venue routed by post title,
   season year from the title with publish-year fallback, posts matching
-  neither venue signal skipped, never guessed). All follow the Freshtix
-  pattern: throw-on-empty structural-drift alarm, `genre: null`, never invent
-  dates/times. Smyrna (`smyrnaga.gov`) is KILLED — 403s bare AND browser UA
-  (PM-56 control-test 2026-07-17), no honest Node-fetch path.
+  neither venue signal skipped, never guessed), `gsu.ts` (GSU Localist —
+  fall-gated source opened 2026-07-17; server-side filter on GSU's OWN
+  "Music Concerts" fine-arts category via `type[]=<id>`, which fails LOUD on
+  an unknown id, plus a client-side re-check of the publisher's tag on every
+  row; **empty parse is VALID here, unlike Freshtix** — a university calendar
+  is legitimately empty out of semester, so the drift alarms are the HTTP 400
+  and a missing `events` array; `ticket_cost` free text rides as a labeled
+  line in `description`, never parsed into price). All follow the Freshtix
+  pattern: structural-drift alarm, `genre: null`, never invent dates/times.
+  Smyrna (`smyrnaga.gov`) is KILLED — 403s bare AND browser UA
+  (PM-56 control-test 2026-07-17), no honest Node-fetch path. KSU's Localist
+  is KILLED (2026-07-17) — zero music in a full fall window, no machine feed
+  on its arts sites; falsifier in BACKLOG.md.
 - **Network invariant:** I/O is isolated to the source clients — `ticketmaster.ts`,
   `jambase.ts`, and `feeds/*`. No other module fetches — `geo.ts`, `merge.ts`,
   `format.ts`, `types.ts` are all pure.
