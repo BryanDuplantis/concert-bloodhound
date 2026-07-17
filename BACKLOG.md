@@ -27,13 +27,37 @@ last regardless of date.
   Opry 7/18 + 10/31 and Princess Theater 8/21 (all JamBase, none in TM); `city: "Boise"` → 0
   rows, JamBase silent.
 
-**Still open — feed leg, needs a product call first.** Feed events carry the post TITLE as the
-artist ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer field. Matching an
-artist against that means substring-matching a human-written headline, which either misses
-(title formatting varies) or over-matches (a support act named in the title surfaces as a
-headliner). `venueMatches()` is NOT the precedent to copy here — it resolves a human's typed
-venue name against a venue string, where containment is the intended semantics. Artist-in-title
-is a different problem. Decide the semantics before writing the matcher.
+**Feed leg — ✅ SHIPPED 2026-07-17 (`artistMatches` in `src/merge.ts`).** The product call it was
+waiting on: **a tribute IS a match, a presenter IS a match, and a buried performer is worth the
+false positives** (Bryan, 2026-07-17). So containment on the title, one-directional (title
+contains query — NOT `venueMatches`'s bidirectional form, which is right only because both its
+sides name a room; a short title would otherwise swallow any long query). 3-char floor.
+
+Feeds carry no performer field — both normalizers copy the post title into `artists`
+(`feeds/index.ts:49`, `feeds/redlight.ts:125`) — so the match runs against a marketing headline
+holding four unlabeled kinds of name, all live in the Red Light feed on 2026-07-17: the performer
+("Boom! Trio"), a performer buried after "w/" ("Wednesday Jazz Jam w/ the Gordon Vernick
+Quartet"), a **presenter** ("Keena Graham presents Ladies in the Round '26"), and a tribute's
+**subject** ("Sade vs Prince JAM (BadAsh Allstar Team)", "Mike Walton Quartet: John Coltrane 100th
+Birthday Celebration").
+
+**The honesty lives in the SUMMARY, not the matcher — this is the load-bearing part.** A row is
+honest on its own: `artists` holds the full billing, so it never claims Prince performs. The old
+line `"Here are upcoming {artist} concerts"` was the ONLY thing asserting he does — over a tribute
+for a man who died in 2016, and Coltrane who died in 1967. That is inventing a performer, the one
+thing this product doesn't do. Now: `upcoming events matching "{artist}" — check each billing,
+some may be tributes or other acts`. **If the match is ever tightened, the summary may tighten
+with it; never the reverse.**
+
+**Scoping mirrors JamBase by a different route.** Feeds are metro-keyed with no artist filter, so
+nationwide = fetch each registered metro (`feedMetros()`) and match client-side — cheap at one
+metro / two sources; cap it if the registry grows to dozens. Named-but-unmappable place still
+sits feeds out. `artistMatches` runs on the FEED leg ONLY: TM and JamBase filter server-side, and
+re-filtering their rows would second-guess a match they already made (PM-47).
+
+Verified live 2026-07-17: `Boom! Trio` no-place → found (was a false absence); `Prince` Atlanta →
+the tribute, summary says "matching"; `Keena Graham` → the presenter; `Gordon Vernick Quartet` →
+2 buried hits; `city: "Boise"` → 0 rows, feeds silent.
 
 **NEW — [precision] `search_by_artist` is not really an artist search (found 2026-07-16, NOT
 fixed).** Both legs are fuzzy, and **Ticketmaster is the fuzzier one: its `keyword` matches

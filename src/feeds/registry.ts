@@ -49,3 +49,19 @@ export const FEED_SOURCES: FeedSource[] = [
 export function sourcesForMetro(metro: string): FeedSource[] {
   return FEED_SOURCES.filter((s) => s.metro === metro);
 }
+
+/**
+ * Every metro we hold feeds for. Lets an artist search with no location named
+ * cover the feed layer without hardcoding a metro key — "where is this artist
+ * playing?" is a nationwide question, and feeds are the one source that can't
+ * answer it directly (JamBase takes a bare `artistName`; feeds are metro-keyed
+ * and have no artist filter at all, so each metro is a separate fetch + a
+ * client-side match).
+ *
+ * Fine while this is one metro / two sources. If the registry grows to dozens,
+ * an unscoped artist search becomes a fan-out of full-calendar fetches — cap it
+ * or drop the nationwide feed leg then, rather than letting it creep.
+ */
+export function feedMetros(): string[] {
+  return [...new Set(FEED_SOURCES.map((s) => s.metro))];
+}

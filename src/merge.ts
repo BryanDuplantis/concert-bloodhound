@@ -197,6 +197,39 @@ export function dedupeWithinSource(concerts: Concert[]): Concert[] {
 }
 
 /**
+ * Does a feed event's title name this artist?
+ *
+ * For FEED ROWS ONLY. Ticketmaster and JamBase filter by artist server-side
+ * (`keyword` / `artistName`), so running this over their results would
+ * re-implement their matching rule client-side and could turn a hit they meant
+ * to return into a false absence (PM-47). Feeds have no server-side filter —
+ * this fills that gap and nothing else.
+ *
+ * Feeds carry no performer field: both normalizers copy the post title into
+ * `artists` (`feeds/index.ts` summary, `feeds/redlight.ts` title), so the only
+ * thing to match against is a marketing headline. Containment is a deliberate
+ * product call (2026-07-17): a tribute IS a match ("Sade vs Prince JAM"), a
+ * presenter IS a match ("Keena Graham presents…"), and a performer buried after
+ * "w/" is worth the false positives that come with it.
+ *
+ * Unlike `venueMatches`, this is ONE-directional — the title must contain the
+ * query, never the reverse. There both sides are a room's name, so containment
+ * either way is symmetric; here the sides are a performer name and a sentence,
+ * and `query.includes(title)` would let a short title ("Hex") match any query
+ * containing it. The 3-char floor keeps a stray short query from matching the
+ * whole calendar.
+ *
+ * The row this returns is honest on its own — `artists` holds the full title, so
+ * it never claims Prince is performing. The claim lives in the CALLER's summary
+ * line, which must not promise "{artist} concerts" over a match this loose.
+ */
+export function artistMatches(c: Concert, query: string): boolean {
+  const q = canonical(query);
+  if (q.length < 3) return false;
+  return [...c.artists, c.name].some((a) => a && canonical(a).includes(q));
+}
+
+/**
  * Merge supplementary events (JamBase, open feeds) into the primary
  * (Ticketmaster) list, dropping cross-source duplicates. The primary source wins
  * — it carries the price, availability, and ticket links the others don't.

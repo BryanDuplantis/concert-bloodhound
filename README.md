@@ -106,14 +106,16 @@ secret lands in shell history.
   open civic/indie feeds for metros that have them (currently Atlanta — Cobb Travel &
   Tourism and Red Light Café, the free/civic and indie shows TM doesn't carry); other
   metros are TM + JamBase until their feeds are added. `search_by_venue` covers
-  Ticketmaster plus the metro's feeds. `search_by_artist` covers Ticketmaster plus
-  JamBase, but not the open feeds — so an artist playing only a feed-sourced indie show
-  can still come back empty there while `search_concerts` finds it. Its JamBase leg is
-  skipped for a location we can't map to a metro (it would otherwise return shows outside
-  the area you asked about).
-- Artist search is a fuzzy match, on both sources. "Eagles" will surface Eagles of Death
-  Metal and Eagles tribute acts; Ticketmaster also matches venue names, so it can return
-  a show at Atlanta Eagles Arena. Results are always labelled with their real artist.
+  Ticketmaster plus the metro's feeds. `search_by_artist` covers all three. Its JamBase
+  and feed legs are skipped for a location we can't map to a metro (they would otherwise
+  return shows outside the area you asked about).
+- Artist search matches loosely, deliberately, across all three sources. "Eagles" surfaces
+  Eagles of Death Metal and Eagles tribute acts; Ticketmaster also matches venue names, so
+  it can return a show at Atlanta Eagles Arena; and open-feed listings match on the event's
+  title, which often names a tribute's subject or a presenter rather than who is actually
+  playing — searching "Prince" finds a Prince tribute night. **Every row carries its real
+  billing, and results are described as "events matching X", never as that artist's
+  concerts.** Read the billing before buying a ticket.
 - US-centric defaults (`countryCode` defaults to `US`; override per call). Built-in
   metro coordinate resolution covers major US metros only; elsewhere, pass `latlong`.
 - Relative dates ("this weekend") are resolved by the *calling* assistant into

@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   applyDateWindow,
   applyMaxPrice,
+  artistMatches,
   byDateAsc,
   canonical,
   dedupeWithinSource,
@@ -298,6 +299,38 @@ test("dedupeWithinSource leaves distinct acts and dates alone", () => {
   ];
   assert.equal(dedupeWithinSource(tm).length, 3);
   assert.deepEqual(dedupeWithinSource([]), []);
+});
+
+test("artistMatches accepts the loose matches Bryan called in (tribute, presenter, buried)", () => {
+  // Product call 2026-07-17: feeds carry the post TITLE as the artist, so all three
+  // of these are intended hits. Live rows from the Red Light Café feed.
+  const tribute = concert({ name: "Sade vs Prince JAM (BadAsh Allstar Team)", artists: ["Sade vs Prince JAM (BadAsh Allstar Team)"] });
+  const presenter = concert({ name: "Keena Graham presents Ladies in the Round '26", artists: ["Keena Graham presents Ladies in the Round '26"] });
+  const buried = concert({ name: "Wednesday Jazz Jam w/ the Gordon Vernick Quartet", artists: ["Wednesday Jazz Jam w/ the Gordon Vernick Quartet"] });
+  assert.ok(artistMatches(tribute, "Prince")); // the subject, not the performer — intended
+  assert.ok(artistMatches(tribute, "Sade"));
+  assert.ok(artistMatches(presenter, "Keena Graham"));
+  assert.ok(artistMatches(buried, "Gordon Vernick Quartet")); // the payoff of matching loosely
+  assert.ok(!artistMatches(buried, "Boom! Trio"));
+});
+
+test("artistMatches is ONE-directional, unlike venueMatches", () => {
+  // venueMatches allows query.includes(venue) because both sides name a room.
+  // Here the sides are a performer and a sentence: a short title must NOT match a
+  // long query, or "Hex & the City" swallows any query containing "hex".
+  const short = concert({ name: "Hex", artists: ["Hex"] });
+  assert.ok(!artistMatches(short, "Hex & the City: Wet, Hot, ATL Summer"));
+  assert.ok(artistMatches(concert({ name: "Hex & the City: Wet, Hot, ATL Summer", artists: ["Hex & the City: Wet, Hot, ATL Summer"] }), "Hex"));
+});
+
+test("artistMatches folds encodings and floors short queries", () => {
+  const c = concert({ name: "Nocturne’s Kiss w/ guests", artists: ["Nocturne’s Kiss w/ guests"] });
+  assert.ok(artistMatches(c, "Nocturne's Kiss")); // U+0027 query vs U+2019 title
+  assert.ok(artistMatches(concert({ name: "Red Light Café Sessions", artists: ["Red Light Café Sessions"] }), "red light cafe"));
+  assert.ok(!artistMatches(c, "of")); // under the 3-char floor — would match half a calendar
+  assert.ok(!artistMatches(concert({ name: "Boom! Trio", artists: [] }), "xy"));
+  // name is checked when artists is empty (feed rows always carry both; TM may not)
+  assert.ok(artistMatches(concert({ name: "Boom! Trio", artists: [] }), "Boom! Trio"));
 });
 
 test("venueMatches resolves a typed query against feed venue formatting", () => {

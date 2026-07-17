@@ -86,7 +86,7 @@ SUMMARY classifier, no canonical vocab.
   intra-source dedup (`dedupeWithinSource`, artist|date|**time**), the TM query
   bounds (`toStart`/`toEnd`) paired with `applyDateWindow`, date sort, max-price
   filter, plus `canonical()` (the shared name-folding used by both dedup keys and
-  venue matching) and `venueMatches()`.
+  both matchers), `venueMatches()`, and `artistMatches()` (feed leg only).
   **The date-window invariant: fetch generously in UTC, trim precisely in local.**
   TM filters on a UTC instant; a Concert's `date` is the event's LOCAL date, and the
   two disagree by the venue's offset — so any bound exact in UTC is wrong in local
@@ -121,13 +121,28 @@ SUMMARY classifier, no canonical vocab.
     or country code): going nationwide there answers a Boise question with Nashville shows.
     Verified live — no place returns Grand Ole Opry + Princess Theater nights TM lacks;
     `city: "Boise"` returns nothing rather than out-of-area rows.
-  - **Feeds remain out, and need a product call first.** Feed events carry the post TITLE
-    as the artist ("Nocturne's Kiss w/ special guests — $10 adv"), not a clean performer
-    field. Matching against that either misses (title formatting varies) or over-matches
-    (a support act named in the title surfaces as a headliner). `venueMatches` is NOT the
-    precedent to copy: it resolves a human's typed venue name, where containment is the
-    intended semantics. Artist-in-title is a different problem — settle the semantics
-    before writing the matcher.
+  - **Feeds wired 2026-07-17 via `artistMatches`, on a settled product call.** Feeds carry
+    the post TITLE as the artist (both normalizers copy it into `artists`), so the only
+    thing to match is a marketing headline holding four unlabeled kinds of name: the
+    performer ("Boom! Trio"), a performer buried after "w/", a **presenter** ("Keena Graham
+    presents…"), and a tribute's **subject** ("Sade vs Prince JAM", "…John Coltrane 100th
+    Birthday Celebration"). **Bryan's call: tribute and presenter are BOTH matches, and the
+    buried performer is worth the false positives.** So containment, one-directional (title
+    contains query) — NOT `venueMatches`'s bidirectional form, which is right only because
+    both its sides name a room.
+  - **The summary carries the honesty, not the matcher.** A row is honest on its own —
+    `artists` holds the real billing, so it never claims Prince performs. The old
+    `"Here are upcoming {artist} concerts"` line was the only thing asserting he does, over
+    a tribute for a man who died in 2016. That is inventing a performer. It now reads
+    `upcoming events matching "{artist}" — check each billing`. If you ever tighten the
+    match, this line can tighten with it; never the reverse.
+  - **Feed scoping mirrors JamBase by a different route.** Feeds are metro-keyed with no
+    artist filter, so nationwide = fetch each registered metro (`feedMetros()`) and match
+    client-side. Cheap at one metro; cap it if the registry grows to dozens. Named-but-
+    unmappable place still sits feeds out.
+  - **`artistMatches` runs on the FEED leg only.** TM and JamBase filter server-side;
+    re-filtering their rows would second-guess a match they already made (PM-47) and could
+    turn an alias hit into a false absence. Filter the leg with no filter, nothing else.
   - **Both legs are fuzzy, and TM is the fuzzier one** — its `keyword` matches VENUE
     names, so "Eagles" returns a Deorro show at Atlanta Eagles Arena. JamBase's
     `artistName` at least stays inside artist names, though it is a substring match

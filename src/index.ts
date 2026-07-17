@@ -6,9 +6,11 @@ import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
 import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
 import { fetchMetroFeeds } from "./feeds/index.js";
+import { feedMetros } from "./feeds/registry.js";
 import {
   applyDateWindow,
   applyMaxPrice,
+  artistMatches,
   byDateAsc,
   dedupeWithinSource,
   mergeConcerts,
@@ -227,7 +229,15 @@ server.registerTool(
     const jbId = geo?.metroKey ? jambaseMetroId(geo.metroKey) : null;
     const wantJb = jbId != null || !askedForPlace;
 
-    const [tmRes, jbRes] = await Promise.allSettled([
+    // Feeds follow the same scoping rule as JamBase, by a different route. They are
+    // metro-keyed with no artist filter, so a nationwide artist search means
+    // fetching each registered metro's calendar and matching client-side — cheap at
+    // one metro, and the alternative is a false absence: an act playing only Red
+    // Light would read "not touring" unless the caller happened to type "Atlanta".
+    // A named-but-unmappable place still sits out, same as JamBase.
+    const feedKeys = geo?.metroKey ? [geo.metroKey] : askedForPlace ? [] : feedMetros();
+
+    const [tmRes, jbRes, feedRes] = await Promise.allSettled([
       searchEvents({
         keyword: args.artist,
         city: geo ? undefined : args.city,
@@ -247,29 +257,51 @@ server.registerTool(
             eventDateTo: args.endDate,
           })
         : Promise.resolve([] as Concert[]),
+      feedKeys.length
+        ? Promise.all(
+            feedKeys.map((m) =>
+              fetchMetroFeeds(m, { start: args.startDate ?? todayLocal(), end: args.endDate }),
+            ),
+          ).then((r) => r.flat())
+        : Promise.resolve([] as Concert[]),
     ]);
 
     const tm = tmRes.status === "fulfilled" ? tmRes.value : [];
     const tmError = tmRes.status === "rejected" ? errMsg(tmRes.reason) : null;
     const jb = jbRes.status === "fulfilled" ? jbRes.value : [];
     if (jbRes.status === "rejected") console.error(`JamBase failed: ${errMsg(jbRes.reason)}`);
+    // Feeds are the only leg with no server-side artist filter, so it is filtered
+    // here — and ONLY here. Running artistMatches over TM/JamBase rows would
+    // second-guess a match they already made (PM-47).
+    const feed = (feedRes.status === "fulfilled" ? feedRes.value : []).filter((c) =>
+      artistMatches(c, args.artist),
+    );
+    if (feedRes.status === "rejected") console.error(`Feeds failed: ${errMsg(feedRes.reason)}`);
 
-    // A TM outage must not decide the answer now that a second source can answer —
+    // A TM outage must not decide the answer now that other sources can answer —
     // the same rule search_by_venue learned in 56fd07a. Only a total blackout fails.
-    if (tmError && jb.length === 0) return fail(tmError);
+    if (tmError && jb.length === 0 && feed.length === 0) return fail(tmError);
 
-    const merged = mergeConcerts(dedupeWithinSource(tm), jb);
+    const merged = mergeConcerts(mergeConcerts(dedupeWithinSource(tm), jb), feed);
     const windowed = applyDateWindow(merged, args.startDate, args.endDate);
     // Sort is load-bearing since JamBase joined: TM alone came back date,asc, but
     // merged rows are appended, so without this a JamBase-only show lands last
     // regardless of its date.
     const results = applyMaxPrice(windowed, args.maxPrice).sort(byDateAsc).slice(0, want);
 
+    // "matching", not "{artist} concerts". Every leg here matches loosely — TM's
+    // keyword hits venue names ("Eagles" -> a show at Atlanta Eagles Arena), and
+    // feeds match a title that may name a tribute's SUBJECT rather than its
+    // performer ("Sade vs Prince JAM" for a Prince search; Prince died in 2016).
+    // Each row is honest on its own — artists carries the real billing — so this
+    // line was the only thing asserting the artist actually plays. Promising
+    // "Prince concerts" over a tribute is inventing a performer, which is the one
+    // thing this product does not do. Narrow the claim, keep the results.
     let summary = results.length
-      ? `Here ${results.length === 1 ? "is an" : "are"} upcoming ${args.artist} concert${
+      ? `Here ${results.length === 1 ? "is" : "are"} ${results.length} upcoming event${
           results.length === 1 ? "" : "s"
-        }:`
-      : `I didn't find upcoming ${args.artist} concerts${near ? ` near ${near}` : ""}. ` +
+        } matching "${args.artist}"${near ? ` near ${near}` : ""} — check each billing, some may be tributes or other acts:`
+      : `I didn't find upcoming events matching "${args.artist}"${near ? ` near ${near}` : ""}. ` +
         `They may not be touring that window${wantJb ? "" : ", and only Ticketmaster was searched for that location"}.`;
     if (tmError && results.length > 0) {
       summary += " (Ticketmaster was unreachable — showing results from other sources only.)";
