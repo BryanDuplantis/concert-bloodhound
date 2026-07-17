@@ -389,13 +389,24 @@ feed appearing, or `ec-events.ics` growing a music category.
 3. **A background-fetch store** — only needed for push-style digests or history;
    the stateless on-demand model has handled everything shipped so far.
 
-**DECISION NEEDED (Tier 3, surfaced 2026-07-17) — do not write the phased plan
-until Bryan picks:** (a) re-scope the pivot around digest + background-fetch
-(product surface, not coverage); (b) fold Tier-2 statics into the existing MCP
-feed layer and drop the web app entirely; (c) shelve until the fall Localist
-window (Aug+) reopens and decide with that data. The original "write a phased
-plan before building" instruction predates this re-probe and would have planned
-against a dead premise.
+**RESOLVED (Bryan, 2026-07-17): option (b) — the web-app pivot is DROPPED.**
+Tier-2 statics fold into the existing MCP feed layer as ordinary sources
+(Freshtix proved the registry takes `type: "html"`); no web app, no
+background-fetch store. The digest surface is out of scope — if it ever
+resurfaces it's a NEW product question, not this item revived. Do not
+re-propose the pivot from the source map's framing; the map is provenance
+for feed candidates only.
+
+**Successor work item — Tier-2 static civic sources (NOT STARTED):**
+Glover Park (mariettaga.gov, 6 free shows/yr May–Sep), Kennesaw Depot Park
+(kennesaw-ga.gov, 4/yr), Smyrna Village Green (smyrnaga.gov — 403s on direct
+fetch; control-test bare vs browser UA per PM-56 before reaching for
+curl_cffi). Recon each page live BEFORE building (the Phase-2/3 lesson):
+verify the current season's dates are actually published as parseable HTML
+and majority-music. ~10 events/yr total — small win, so keep the build
+proportional; a source that resists a simple parser gets killed, not
+engineered around. Follow the Freshtix pattern: throw-on-empty-parse
+structural-drift alarm, `genre: null`, never invent dates.
 
 ---
 
