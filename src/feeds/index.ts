@@ -14,6 +14,24 @@ import { fetchICalText, parseICal, parseLocation, type ICalEvent } from "./ical.
 import { sourcesForMetro, type FeedFetchResult, type FeedSource } from "./registry.js";
 import { fetchRedLightConcerts } from "./redlight.js";
 import { fetchFreshtixConcerts } from "./freshtix.js";
+import { fetchGloverConcerts } from "./glover.js";
+import { fetchKennesawConcerts } from "./kennesaw.js";
+
+/**
+ * Non-iCal sources each own a bespoke fetch→parse→normalize→sanitize pipeline
+ * (event date, drift alarm, genre-null all live in the source module). Keyed
+ * by source id, not FeedType — two "html" sources already need different
+ * parsers, so type describes transport while this table names the code.
+ */
+const BESPOKE_FETCHERS: Record<
+  string,
+  (src: FeedSource, window: { start?: string; end?: string }) => Promise<FeedFetchResult>
+> = {
+  redlight: fetchRedLightConcerts,
+  "earl-freshtix": fetchFreshtixConcerts,
+  "glover-park": fetchGloverConcerts,
+  "kennesaw-news": fetchKennesawConcerts,
+};
 
 interface CacheEntry {
   at: number;
@@ -96,12 +114,9 @@ export async function fetchMetroFeedsDetailed(
 
   const settled = await Promise.allSettled(
     sources.map(async (src): Promise<FeedFetchResult> => {
-      // RSS/HTML sources own their full fetch→parse→normalize→sanitize
-      // pipeline (event date, denylist, genre-null all live in the venue
-      // module today — Red Light and The EARL are the only two). iCal
-      // sources use the Cobb category-trust path.
-      if (src.type === "rss") return fetchRedLightConcerts(src, window);
-      if (src.type === "html") return fetchFreshtixConcerts(src, window);
+      const bespoke = BESPOKE_FETCHERS[src.id];
+      if (bespoke) return bespoke(src, window);
+      // Everything else is the iCal category-trust path (Cobb).
       const events = await loadICal(src.url);
       const dated = events.filter((e) => matchesMusic(e, src.musicCategories ?? []));
       // Horizon from the FULL dated (but not window-trimmed) list — same

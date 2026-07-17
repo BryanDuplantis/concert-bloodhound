@@ -7,7 +7,7 @@
  */
 import type { Concert } from "../types.js";
 
-export type FeedType = "ical" | "rss" | "html";
+export type FeedType = "ical" | "rss" | "html" | "wp-json";
 
 export interface FeedSource {
   /** Stable id (logging, dedup of sources). */
@@ -54,6 +54,26 @@ export const FEED_SOURCES: FeedSource[] = [
     metro: "atlanta",
     type: "html",
     url: "https://badearl.freshtix.com/",
+  },
+  {
+    // Tier-2 static civic page: one CivicEngage lineup table per season,
+    // 6 free Friday shows Apr–Sep on the Marietta Square. See glover.ts.
+    id: "glover-park",
+    name: "Glover Park Concert Series",
+    metro: "atlanta",
+    type: "html",
+    url: "https://www.mariettaga.gov/192/Glover-Park-Concert-Series",
+  },
+  {
+    // Tier-2 civic source via the city's open WordPress REST API — the
+    // /concert-series/ page itself is client-rendered and unparseable.
+    // Covers BOTH city series (First Friday downtown + Depot Park
+    // amphitheater), routed by post title. See kennesaw.ts.
+    id: "kennesaw-news",
+    name: "City of Kennesaw",
+    metro: "atlanta",
+    type: "wp-json",
+    url: "https://www.kennesaw-ga.gov/wp-json/wp/v2/posts?search=concert%20series&per_page=10",
   },
 ];
 
