@@ -7,7 +7,7 @@
  */
 import type { Concert } from "../types.js";
 
-export type FeedType = "ical" | "rss" | "html" | "wp-json";
+export type FeedType = "ical" | "rss" | "html" | "wp-json" | "localist";
 
 export interface FeedSource {
   /** Stable id (logging, dedup of sources). */
@@ -63,6 +63,19 @@ export const FEED_SOURCES: FeedSource[] = [
     metro: "atlanta",
     type: "html",
     url: "https://www.mariettaga.gov/192/Glover-Park-Concert-Series",
+  },
+  {
+    // Fall-gated university source, opened 2026-07-17. Server-side filter on
+    // GSU's OWN "Music Concerts" fine-arts category (fails loud — an unknown
+    // filter id 400s), verified client-side per event. Kopleff recitals +
+    // Rialto Center headliners (Béla Fleck, Take 6, Joshua Redman) TM/JamBase
+    // don't fully carry. Empty is VALID out of semester — see gsu.ts. (KSU's
+    // Localist instance: killed 2026-07-17, zero music in a full fall window.)
+    id: "gsu-localist",
+    name: "Georgia State University",
+    metro: "atlanta",
+    type: "localist",
+    url: "https://calendar.gsu.edu/api/2/events",
   },
   {
     // Tier-2 civic source via the city's open WordPress REST API — the

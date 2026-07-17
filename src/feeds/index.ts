@@ -16,6 +16,7 @@ import { fetchRedLightConcerts } from "./redlight.js";
 import { fetchFreshtixConcerts } from "./freshtix.js";
 import { fetchGloverConcerts } from "./glover.js";
 import { fetchKennesawConcerts } from "./kennesaw.js";
+import { fetchGsuConcerts } from "./gsu.js";
 
 /**
  * Non-iCal sources each own a bespoke fetch→parse→normalize→sanitize pipeline
@@ -31,6 +32,7 @@ const BESPOKE_FETCHERS: Record<
   "earl-freshtix": fetchFreshtixConcerts,
   "glover-park": fetchGloverConcerts,
   "kennesaw-news": fetchKennesawConcerts,
+  "gsu-localist": fetchGsuConcerts,
 };
 
 interface CacheEntry {
