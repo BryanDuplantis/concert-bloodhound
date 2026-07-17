@@ -1,7 +1,7 @@
 {
   "name": "concert-bloodhound",
   "version": "0.1.0",
-  "description": "MCP server for discovering live concerts via the Ticketmaster Discovery API — real listings only, never invented.",
+  "description": "MCP server for discovering live concerts via the Ticketmaster Discovery API \u2014 real listings only, never invented.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -18,17 +18,20 @@
     "smoke:mcp": "node dist/smoke-mcp.js",
     "smoke:jambase": "node --env-file=.env dist/smoke-jambase.js",
     "smoke:feeds": "node dist/smoke-feeds.js",
-    "test": "tsc && node --test dist/types.test.js dist/geo.test.js dist/merge.test.js dist/jambase.test.js dist/feeds/ical.test.js dist/feeds/redlight.test.js dist/feeds/freshtix.test.js dist/feeds/glover.test.js dist/feeds/kennesaw.test.js dist/feeds/gsu.test.js"
+    "test": "tsc && node --test dist/types.test.js dist/geo.test.js dist/merge.test.js dist/jambase.test.js dist/feeds/ical.test.js dist/feeds/redlight.test.js dist/feeds/freshtix.test.js dist/feeds/glover.test.js dist/feeds/kennesaw.test.js dist/feeds/gsu.test.js",
+    "smoke:http": "node --env-file=.env dist/smoke-http.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "^4.22.2",
     "fast-xml-parser": "5.9.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/express": "^4.17.25",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
   }

@@ -1,0 +1,294 @@
+/**
+ * Live behavioral smoke for the HTTP transport + OAuth stack (constraint 6 of
+ * the bloodhound-remote-mcp gate: compile success on ported auth code is not
+ * proof — the consent, token, and 401-discovery flows must be exercised).
+ *
+ * Boots `dist/index.js --transport http` as a child on a scratch port with a
+ * scratch OAuth state dir, then walks:
+ *   1. /health
+ *   2. POST /mcp unauthenticated → 401 + WWW-Authenticate resource_metadata (RFC 9728)
+ *   3. /.well-known/oauth-authorization-server discovery
+ *   4. DCR /register: allowlisted redirect_uri accepted, foreign one rejected
+ *   5. Consent: GET /authorize → password form; wrong password → 401;
+ *      right password → 302 + cookie; cookied /authorize → code on redirect
+ *   6. /token: PKCE code exchange → access + refresh; refresh grant re-mints
+ *   7. MCP over HTTP via the real SDK client: initialize + tools/list under
+ *      the static Bearer secret AND under the OAuth access token; tools/call
+ *      (search_concerts Atlanta) asserting structuredContent is present when
+ *      TICKETMASTER_API_KEY is available (skipped, loudly, when not).
+ *
+ * Exit non-zero on any failure. Run: npm run build && npm run smoke:http
+ * (pass API keys via --env-file=.env for the tools/call leg).
+ */
+import { spawn, type ChildProcess } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const PORT = 3013;
+const BASE = `http://127.0.0.1:${PORT}`;
+const SECRET = "smoke-test-secret-not-a-real-credential";
+const PASSWORD = "smoke-test-password";
+const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
+
+let failures = 0;
+function check(name: string, cond: boolean, detail?: string): void {
+  if (cond) {
+    console.log(`  ok   ${name}`);
+  } else {
+    failures++;
+    console.error(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`);
+  }
+}
+
+async function waitForHealth(deadlineMs: number): Promise<void> {
+  const until = Date.now() + deadlineMs;
+  while (Date.now() < until) {
+    try {
+      const r = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(1000) });
+      if (r.ok) return;
+    } catch {
+      // not up yet
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error("server did not become healthy in time");
+}
+
+async function mcpRoundTrip(label: string, token: string, withToolCall: boolean): Promise<void> {
+  const transport = new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const client = new Client({ name: "smoke-http", version: "0.0.1" });
+  await client.connect(transport);
+  const tools = await client.listTools();
+  const names = tools.tools.map((t) => t.name).sort();
+  check(
+    `${label}: tools/list returns the three tools`,
+    JSON.stringify(names) === JSON.stringify(["search_by_artist", "search_by_venue", "search_concerts"]),
+    JSON.stringify(names),
+  );
+  const declaresOutput = tools.tools.every((t) => t.outputSchema != null);
+  check(`${label}: every tool declares outputSchema`, declaresOutput);
+  if (withToolCall) {
+    const res = await client.callTool({
+      name: "search_concerts",
+      arguments: { city: "Atlanta", size: 3 },
+    });
+    const sc = (res as { structuredContent?: { results?: unknown[] } }).structuredContent;
+    check(
+      `${label}: tools/call returns structuredContent with results[]`,
+      sc != null && Array.isArray(sc.results),
+      JSON.stringify(res).slice(0, 200),
+    );
+  }
+  await client.close();
+}
+
+async function main(): Promise<void> {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "bloodhound-smoke-oauth-"));
+  const haveTmKey = !!process.env.TICKETMASTER_API_KEY;
+
+  const child: ChildProcess = spawn(
+    process.execPath,
+    ["dist/index.js", "--transport", "http"],
+    {
+      env: {
+        ...process.env,
+        MCP_PORT: String(PORT),
+        MCP_SECRET: SECRET,
+        PUBLIC_BASE_URL: BASE,
+        OAUTH_AUTHORIZE_PASSWORD: PASSWORD,
+        OAUTH_ALLOWED_REDIRECT_URIS: CALLBACK,
+        MCP_ALLOWED_ORIGINS: "https://claude.ai,https://claude.com",
+        BLOODHOUND_OAUTH_STATE_DIR: stateDir,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  child.stderr?.on("data", (d: Buffer) => process.stderr.write(`  [child] ${d}`));
+
+  try {
+    await waitForHealth(10_000);
+
+    // 1. /health
+    const health = (await (await fetch(`${BASE}/health`)).json()) as { service?: string };
+    check("health names the service", health.service === "concert-bloodhound");
+
+    // 2. Unauthenticated /mcp → 401 with RFC 9728 discovery pointer
+    const unauth = await fetch(`${BASE}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+    });
+    check("unauthenticated /mcp is 401", unauth.status === 401);
+    const www = unauth.headers.get("www-authenticate") ?? "";
+    check(
+      "401 carries resource_metadata discovery",
+      www.includes(`resource_metadata="${BASE}/.well-known/oauth-protected-resource/mcp"`),
+      www,
+    );
+
+    // 3. AS discovery
+    const disco = (await (
+      await fetch(`${BASE}/.well-known/oauth-authorization-server`)
+    ).json()) as { authorization_endpoint?: string; token_endpoint?: string };
+    check(
+      "AS discovery advertises authorize+token",
+      disco.authorization_endpoint === `${BASE}/authorize` && disco.token_endpoint === `${BASE}/token`,
+      JSON.stringify(disco),
+    );
+
+    // 4. DCR — foreign redirect_uri rejected, allowlisted accepted
+    const badReg = await fetch(`${BASE}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ redirect_uris: ["https://evil.example/cb"] }),
+    });
+    check("DCR rejects foreign redirect_uri", badReg.status === 400, String(badReg.status));
+
+    const reg = await fetch(`${BASE}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ redirect_uris: [CALLBACK], token_endpoint_auth_method: "client_secret_post" }),
+    });
+    const client = (await reg.json()) as { client_id?: string; client_secret?: string };
+    check(
+      "DCR registers the allowlisted client",
+      reg.status === 201 && !!client.client_id && !!client.client_secret,
+      String(reg.status),
+    );
+
+    // 5. Consent flow
+    const verifier = crypto.randomBytes(32).toString("base64url");
+    const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+    const authzQs = new URLSearchParams({
+      response_type: "code",
+      client_id: client.client_id!,
+      redirect_uri: CALLBACK,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      state: "smoke-state",
+    });
+
+    const form = await fetch(`${BASE}/authorize?${authzQs}`, { redirect: "manual" });
+    const formHtml = await form.text();
+    check(
+      "no-cookie /authorize renders the password form",
+      form.status === 200 && formHtml.includes('action="/authorize/consent"'),
+      String(form.status),
+    );
+
+    const consentBody = (pw: string) =>
+      new URLSearchParams({ password: pw, ...Object.fromEntries(authzQs) });
+    const badPw = await fetch(`${BASE}/authorize/consent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: consentBody("wrong-password"),
+      redirect: "manual",
+    });
+    check("wrong consent password is 401", badPw.status === 401, String(badPw.status));
+
+    const goodPw = await fetch(`${BASE}/authorize/consent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: consentBody(PASSWORD),
+      redirect: "manual",
+    });
+    const setCookie = goodPw.headers.get("set-cookie") ?? "";
+    check(
+      "right password 302s with consent cookie",
+      goodPw.status === 302 && setCookie.includes("bloodhound_oauth_consent="),
+      `${goodPw.status} ${setCookie.slice(0, 60)}`,
+    );
+    const cookie = setCookie.split(";")[0]!;
+
+    const authz = await fetch(`${BASE}/authorize?${authzQs}`, {
+      redirect: "manual",
+      headers: { Cookie: cookie },
+    });
+    const loc = authz.headers.get("location") ?? "";
+    const code = loc.startsWith(CALLBACK) ? new URL(loc).searchParams.get("code") : null;
+    check(
+      "cookied /authorize mints a code to the registered callback",
+      authz.status === 302 && !!code && new URL(loc).searchParams.get("state") === "smoke-state",
+      `${authz.status} ${loc.slice(0, 80)}`,
+    );
+
+    // 6. Token exchange + refresh
+    const tokenRes = await fetch(`${BASE}/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code!,
+        code_verifier: verifier,
+        redirect_uri: CALLBACK,
+        client_id: client.client_id!,
+        client_secret: client.client_secret!,
+      }),
+    });
+    const tokens = (await tokenRes.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+    };
+    check(
+      "PKCE code exchange returns access+refresh tokens",
+      tokenRes.status === 200 && !!tokens.access_token && !!tokens.refresh_token,
+      String(tokenRes.status),
+    );
+
+    const refreshRes = await fetch(`${BASE}/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token!,
+        client_id: client.client_id!,
+        client_secret: client.client_secret!,
+      }),
+    });
+    const refreshed = (await refreshRes.json()) as { access_token?: string };
+    check(
+      "refresh grant re-mints an access token",
+      refreshRes.status === 200 && !!refreshed.access_token && refreshed.access_token !== tokens.access_token,
+      String(refreshRes.status),
+    );
+
+    // 7. Real MCP over HTTP — static secret and OAuth token paths
+    if (!haveTmKey) {
+      console.log("  SKIP tools/call legs — TICKETMASTER_API_KEY not set (run with --env-file=.env)");
+    }
+    await mcpRoundTrip("bearer-secret", SECRET, haveTmKey);
+    await mcpRoundTrip("oauth-token", tokens.access_token!, false);
+
+    // Bad token still 401s
+    const badTok = await fetch(`${BASE}/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: "Bearer not-a-real-token",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+    });
+    check("garbage bearer token is 401", badTok.status === 401, String(badTok.status));
+  } finally {
+    child.kill("SIGTERM");
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+
+  if (failures > 0) {
+    console.error(`\nsmoke-http: ${failures} FAILURE(S)`);
+    process.exit(1);
+  }
+  console.log("\nsmoke-http: all checks passed");
+}
+
+main().catch((e) => {
+  console.error("smoke-http fatal:", e);
+  process.exit(1);
+});
