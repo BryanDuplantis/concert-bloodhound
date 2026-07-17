@@ -1,5 +1,8 @@
 import type { Concert } from "./types.js";
 import { safeUrl, sanitizeConcert, sanitizeText } from "./types.js";
+// Pure helper into an I/O client — the network invariant only forbids the reverse
+// (merge.ts imports nothing but types.js, so no cycle).
+import { canonical } from "./merge.js";
 
 const BASE = "https://app.ticketmaster.com/discovery/v2";
 
@@ -18,6 +21,8 @@ export interface SearchParams {
   startDateTime?: string;
   endDateTime?: string;
   venueId?: string;
+  /** TM attraction (artist) id — the entity route; see findAttractions. */
+  attractionId?: string;
   radius?: number;
   unit?: "miles" | "km";
   sort?: string;
@@ -28,6 +33,16 @@ export interface VenueMatch {
   id: string;
   name: string;
   city: string | null;
+}
+
+/** A Ticketmaster attraction = an artist/act entity, the thing `keyword` only gropes at. */
+export interface AttractionMatch {
+  id: string;
+  name: string;
+  /** TM's own genre label for the act, or null. Display/ranking only — never a filter. */
+  genre: string | null;
+  /** Count TM reports as upcoming; 0 means querying its events is a wasted call. */
+  upcoming: number;
 }
 
 function apiKey(): string {
@@ -159,6 +174,7 @@ export async function searchEvents(p: SearchParams): Promise<Concert[]> {
     startDateTime: p.startDateTime,
     endDateTime: p.endDateTime,
     venueId: p.venueId,
+    attractionId: p.attractionId,
     radius: p.radius,
     unit: p.radius ? (p.unit ?? "miles") : undefined,
     sort: p.sort ?? "date,asc",
@@ -168,6 +184,58 @@ export async function searchEvents(p: SearchParams): Promise<Concert[]> {
   // Sanitize at the source boundary: attacker-influenceable event text never
   // leaves this client unhardened (mirrors the network-isolation invariant).
   return events.map(normalizeEvent).map(sanitizeConcert);
+}
+
+/**
+ * Resolve an artist name to Ticketmaster ATTRACTION entities — the act itself,
+ * not text that happens to appear near one.
+ *
+ * Why this exists: `keyword` on /events is a text search over the whole record,
+ * so it matches VENUE names and cannot find the act you asked for. Verified live
+ * 2026-07-17 — `keyword=Eagles` near Atlanta returned Eagles of Death Metal, a
+ * Deorro show at *Atlanta Eagles Arena*, and a church event at *Eagles Landing
+ * First Baptist*: three rows, zero Eagles. `attractionId=K8vZ9171ob7` returns the
+ * band. The fix was never a filter over keyword's output — filtering junk leaves
+ * fewer rows, not the right ones.
+ *
+ * **Trust the per-attraction classification, NOT the segmentName param.** Passing
+ * `segmentName=Music` here still returns "Philadelphia Eagles" (NFL) and "Colorado
+ * Eagles" (hockey) — the param filters loosely. Each attraction's OWN
+ * `classifications[0].segment.name` is correct and is what we gate on. That is
+ * reading TM's own label, the inverse of reimplementing their matcher (PM-47).
+ *
+ * `upcoming === 0` acts are dropped: TM says they have nothing scheduled, so an
+ * event query for them is a guaranteed-empty round trip.
+ *
+ * Ranking is TM's relevance order, with an exact canonical name match pulled to
+ * the front so "Eagles" leads with the band rather than a tribute. Ranking only —
+ * the caller decides how many to keep, and tributes/side-projects are legitimate
+ * results (product call 2026-07-17), not noise to be trimmed here.
+ */
+export async function findAttractions(
+  keyword: string,
+  limit = 5,
+): Promise<AttractionMatch[]> {
+  const data = await tmFetch("attractions.json", {
+    keyword,
+    segmentName: "Music", // narrows the candidate pool; provably does NOT guarantee it
+    size: 20,
+    sort: "relevance,desc",
+  });
+  const raw: any[] = data?._embedded?.attractions ?? [];
+  const music = raw.filter(
+    (a) => a?.classifications?.[0]?.segment?.name === "Music" && (a?.upcomingEvents?._total ?? 0) > 0,
+  );
+  const want = canonical(keyword);
+  const scored = music.map((a) => ({
+    id: String(a.id),
+    name: sanitizeText(a?.name) ?? keyword,
+    genre: sanitizeText(a?.classifications?.[0]?.genre?.name ?? null),
+    upcoming: Number(a?.upcomingEvents?._total ?? 0),
+    exact: canonical(String(a?.name ?? "")) === want,
+  }));
+  scored.sort((x, y) => Number(y.exact) - Number(x.exact)); // stable: TM's relevance holds within each group
+  return scored.slice(0, limit).map(({ exact, ...rest }) => rest);
 }
 
 /** Resolve a venue name to its Ticketmaster id (most relevant match). */

@@ -135,6 +135,25 @@ const informativeGenre = (c: Concert): string | null =>
   c.genre && !CATCH_ALL_GENRES.has(canonical(c.genre)) ? c.genre : null;
 
 /**
+ * An ancillary PRODUCT sold alongside the show, not the show itself.
+ *
+ * Ticketmaster lists these as separate events sharing the concert's artist, date
+ * and time, and labels them nothing: live 2026-07-17 the Eagles returned 16 rows =
+ * 8 shows x 2, every one a `"Eagles Live at Sphere"` / `"Eagles - Suite
+ * Reservation"` pair at 20:30, both `type=Undefined`. The NAME is the only tell TM
+ * gives, so matching it is a heuristic — used ONLY to rank duplicate copies of one
+ * show, never to drop a row. If a show's only listing is a suite, that is what TM
+ * is selling and it still ships.
+ *
+ * Needed because the length tiebreak below reads longer-name-as-richer, which is
+ * true for a support act ("Austin Meade with Cole Barnhill") and false here:
+ * "Eagles - Suite Reservation" is longer than "Eagles Live at Sphere" and is the
+ * worse answer — a premium package standing in for the concert, on all 8 dates.
+ */
+const ANCILLARY_PRODUCT = /\b(suite reservation|vip package|hotel package|parking|meet (and|&) greet)\b/i;
+const isAncillary = (c: Concert): boolean => ANCILLARY_PRODUCT.test(c.name);
+
+/**
  * Is `a` a strictly better copy of the same show than `b`? More populated fields
  * wins; on a tie the longer name wins, which is how a support act survives — the
  * partner row reads "Austin Meade with Cole Barnhill" where the native row reads
@@ -148,6 +167,12 @@ const informativeGenre = (c: Concert): string | null =>
  * invents nothing.
  */
 function moreComplete(a: Concert, b: Concert): boolean {
+  // The show beats an ancillary product outright, before any field counting: a
+  // suite row can be strictly more populated than the concert and still be the
+  // wrong answer to "when are the Eagles playing?".
+  const aAnc = isAncillary(a);
+  const bAnc = isAncillary(b);
+  if (aAnc !== bAnc) return !aAnc;
   const filled = (c: Concert) =>
     [c.date, c.time, c.venue, c.city, c.region, informativeGenre(c), c.priceMin, c.priceMax, c.currency, c.url, c.ageRestriction]
       .filter((v) => v != null).length;

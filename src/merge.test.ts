@@ -272,6 +272,26 @@ test("dedupeWithinSource prefers a real genre over TM's catch-all", () => {
   assert.equal(dedupeWithinSource([wordy, terse])[0].genre, "Jazz");
 });
 
+test("dedupeWithinSource keeps the show, not the suite package sold alongside it", () => {
+  // Live: TM returns 16 rows for the Eagles = 8 shows x 2, each a concert + a
+  // "Suite Reservation" at the same artist|date|time, both type=Undefined. The
+  // longer-name tiebreak picked the suite on all 8 — right rule, wrong case.
+  const suite = concert({ name: "Eagles - Suite Reservation", artists: ["Eagles"], date: "2026-09-18", time: "20:30:00", venue: "Sphere" });
+  const show = concert({ name: "Eagles Live at Sphere", artists: ["Eagles"], date: "2026-09-18", time: "20:30:00", venue: "Sphere" });
+  assert.equal(dedupeWithinSource([suite, show])[0].name, "Eagles Live at Sphere");
+  assert.equal(dedupeWithinSource([show, suite])[0].name, "Eagles Live at Sphere"); // order-independent
+  // A populated suite must NOT outrank a bare concert — ancillary loses before field count.
+  const richSuite = concert({ name: "Eagles - Suite Reservation", artists: ["Eagles"], date: "2026-09-18", time: "20:30:00", priceMin: 900, genre: "Rock" });
+  const bareShow = concert({ name: "Eagles Live at Sphere", artists: ["Eagles"], date: "2026-09-18", time: "20:30:00" });
+  assert.equal(dedupeWithinSource([richSuite, bareShow])[0].name, "Eagles Live at Sphere");
+  // Honest floor: a suite-only listing is what TM sells — it still ships.
+  assert.equal(dedupeWithinSource([suite])[0].name, "Eagles - Suite Reservation");
+  // Must not fire on a real billing that merely reads long (the rule it coexists with).
+  const support = concert({ name: "Austin Meade with Cole Barnhill", artists: ["Austin Meade"], date: "2026-07-21", time: "19:00:00" });
+  const bare = concert({ name: "Austin Meade", artists: ["Austin Meade"], date: "2026-07-21", time: "19:00:00" });
+  assert.equal(dedupeWithinSource([bare, support])[0].name, "Austin Meade with Cole Barnhill");
+});
+
 test("dedupeWithinSource does NOT collapse an early/late double-header", () => {
   // The regression this key exists to prevent. Eddie's Attic runs two separate,
   // separately-ticketed shows a night; artist+date alone would hide one of them.

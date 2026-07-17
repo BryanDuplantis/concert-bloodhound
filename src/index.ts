@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
+import { findAttractions, findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
 import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
 import { fetchMetroFeeds } from "./feeds/index.js";
@@ -237,18 +237,46 @@ server.registerTool(
     // A named-but-unmappable place still sits out, same as JamBase.
     const feedKeys = geo?.metroKey ? [geo.metroKey] : askedForPlace ? [] : feedMetros();
 
+    // Ticketmaster leg: resolve the NAME to attraction entities, then query each
+    // one's events. `keyword` is a text search over the whole record — it matches
+    // venue names and cannot find the act: live, `keyword=Eagles` near Atlanta
+    // returned Eagles of Death Metal, a Deorro show at Atlanta Eagles Arena, and a
+    // church event, and zero Eagles. Filtering that output was the obvious fix and
+    // the wrong one; it leaves fewer rows, not right ones.
+    // Keyword survives ONLY as the fallback for an act TM has no attraction for —
+    // better a loose answer than a false absence, and the summary says "matching".
+    const geoArgs = {
+      city: geo ? undefined : args.city,
+      latlong: geo?.latlong,
+      radius: geo ? (args.radius ?? DEFAULT_RADIUS_MI) : args.radius,
+      stateCode: args.stateCode,
+      countryCode: args.countryCode,
+      startDateTime: toStart(args.startDate),
+      endDateTime: toEnd(args.endDate),
+      size: Math.min(Math.max(want, 20), 50),
+    };
+    const attractions = await findAttractions(args.artist).catch((e) => {
+      console.error(`Attraction lookup failed: ${errMsg(e)}`);
+      return [] as Awaited<ReturnType<typeof findAttractions>>;
+    });
+
     const [tmRes, jbRes, feedRes] = await Promise.allSettled([
-      searchEvents({
-        keyword: args.artist,
-        city: geo ? undefined : args.city,
-        latlong: geo?.latlong,
-        radius: geo ? (args.radius ?? DEFAULT_RADIUS_MI) : args.radius,
-        stateCode: args.stateCode,
-        countryCode: args.countryCode,
-        startDateTime: toStart(args.startDate),
-        endDateTime: toEnd(args.endDate),
-        size: Math.min(Math.max(want, 20), 50),
-      }),
+      attractions.length
+        ? // allSettled, NOT all: the fan-out is several calls to one API, and
+          // Promise.all makes any single failure (a rate limit, one bad id) a total
+          // TM blackout — the exact degrade-per-source rule this file applies one
+          // level up. One attraction failing must cost that act's shows, nothing more.
+          Promise.allSettled(
+            attractions.map((a) => searchEvents({ ...geoArgs, attractionId: a.id })),
+          ).then((rs) => {
+            rs.forEach((r, i) => {
+              if (r.status === "rejected") {
+                console.error(`Attraction "${attractions[i]!.name}" failed: ${errMsg(r.reason)}`);
+              }
+            });
+            return rs.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+          })
+        : searchEvents({ ...geoArgs, keyword: args.artist }),
       wantJb
         ? searchJamBaseEvents({
             artistName: args.artist,

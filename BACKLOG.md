@@ -59,24 +59,43 @@ Verified live 2026-07-17: `Boom! Trio` no-place → found (was a false absence);
 the tribute, summary says "matching"; `Keena Graham` → the presenter; `Gordon Vernick Quartet` →
 2 buried hits; `city: "Boise"` → 0 rows, feeds silent.
 
-**NEW — [precision] `search_by_artist` is not really an artist search (found 2026-07-16, NOT
-fixed).** Both legs are fuzzy, and **Ticketmaster is the fuzzier one: its `keyword` matches
-VENUE names.** Live — `artist: "Eagles"` near Atlanta returns `Eagles of Death Metal` (a
-different band), `Deorro` at **Atlanta Eagles Arena**, and `CAIN` at **Eagles Landing First
-Baptist Church**, under the summary "Here are upcoming Eagles concerts". The last two match
-nothing but the room's name. JamBase's `artistName` is *more* precise — its fuzz at least stays
-inside artist names, though it is a substring match (returns Eagles tributes). This is
-pre-existing, predates the JamBase leg, and was NOT made worse by it.
+**[precision] `search_by_artist` was not an artist search — ✅ FIXED 2026-07-17 via
+`findAttractions` (attraction-first routing). It was never a filter problem.**
 
-Deliberately not fixed, because the obvious fix is a trap: filtering results by canonical
-containment on the query would **reimplement TM's matching rule client-side** (PM-47 — validates
-your model, not the system). TM's `keyword` may resolve aliases/attractions that naive
-containment can't, so a containment filter risks converting a fuzzy-but-useful hit into a false
-absence — the worst bug class in this project. A probe of `mgk` / `P!nk` / `Puff Daddy` was
-inconclusive (those acts aren't touring, so 0-row results prove nothing either way). **Settle it
-with evidence, not reasoning:** find an artist whose TM alias demonstrably differs from their
-billed name and is touring, and check whether TM's keyword resolves it. Then decide — and apply
-the result across BOTH legs or neither.
+The old leg passed the name to TM's `keyword`, a text search over the whole event record. It
+matched VENUE names, and it could not find the act: live, `artist: "Eagles"` near Atlanta
+returned `Eagles of Death Metal`, `Deorro` at **Atlanta Eagles Arena**, and `CAIN` at **Eagles
+Landing First Baptist Church** — three rows, **zero Eagles**, under the summary "Here are
+upcoming Eagles concerts".
+
+**The containment filter this entry used to prescribe would not have worked.** It would have
+dropped Deorro/CAIN and left you with… still no Eagles. Filtering junk leaves fewer rows, not
+right ones. The trap was real (PM-47) but so was the dead end.
+
+**The alias question is ANSWERED, and it was the wrong question.** TM's event `keyword` does NOT
+resolve aliases: `keyword="machine gun kelly"` → **0 events**, while the ATTRACTION `mgk` carries
+`aliases: ["machine gun kelly"]`. (`keyword="mgk"` returns a radio station's festival — WMGK.) So
+no filter could ever have broken alias resolution, because `keyword` has none. Yesterday's
+`mgk`/`P!nk`/`Puff Daddy` probe was inconclusive because it asked the events endpoint; the
+answer was one level up, in the entity.
+
+**Shipped:** `findAttractions()` resolves the name against `/attractions`, keeps only entities TM
+itself classifies `segment=Music` with `upcoming > 0`, ranks exact canonical name matches first,
+caps at 5, and `search_by_artist` fans out `events?attractionId=` for each (`allSettled` — one
+attraction failing costs that act's shows, not the whole leg). `keyword` survives ONLY as the
+fallback when TM has no attraction for a name, so an obscure act is a loose answer rather than a
+false absence. Tributes stay in, per the 2026-07-17 call: "Eagles" resolves to Eagles, Illegal
+Eagles, Eagles Road, Absolute Eagles, Norwegian Eagles.
+
+**Trust the per-attraction classification, NEVER the `segmentName` param.** Passing
+`segmentName=Music` to `/attractions` still returns "Philadelphia Eagles" (NFL) and "Colorado
+Eagles" (hockey) — the param filters loosely. Each attraction's own
+`classifications[0].segment.name` is correct. Reading TM's label is the inverse of PM-47, not an
+instance of it.
+
+Verified live: `Eagles` 2026-09-15..09-30 → `Eagles Live at Sphere` 9/18 + 9/19 from Ticketmaster
+alongside the tributes; Deorro/CAIN gone. Note the real shows are easy to miss in a wide window —
+JamBase's tribute volume sorts earlier by date and fills the result cap.
 
 ---
 
@@ -124,7 +143,13 @@ Two triage lessons, both earned the hard way in this section:
    John Berry double-header, and needs no heuristic on upstream free text. Survivor = the most
    complete copy (populated-field count, then longer name so a support act isn't dropped —
    "Austin Meade with Cole Barnhill" beats "Austin Meade"), held at the first occurrence's
-   position for stable ordering. **Genre is scored through a catch-all filter, not raw
+   position for stable ordering. **An ancillary product loses outright, before field counting**
+   — TM sells suites/parking as separate events sharing the concert's artist|date|time and
+   labels them nothing (`type=Undefined` on both): the Eagles return 16 rows = 8 shows x 2, each
+   a `"Eagles Live at Sphere"` / `"Eagles - Suite Reservation"` pair at 20:30. The longer-name
+   tiebreak below picked the SUITE on all 8 — the rule is right for a support act ("Austin Meade
+   with Cole Barnhill") and wrong for a different product. Ranking-only: a suite-only listing is
+   what TM is selling and still ships. **Genre is scored through a catch-all filter, not raw
    nullness** — TM's duplicate listings of one show disagree (John Berry 7/25 came back
    "Other" on one event id, "Country" on two others), and counting "Other" as populated made
    them tie, so first-seen won and the catch-all shipped. Caught only by looking at rendered

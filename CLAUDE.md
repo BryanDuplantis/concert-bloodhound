@@ -143,13 +143,24 @@ SUMMARY classifier, no canonical vocab.
   - **`artistMatches` runs on the FEED leg only.** TM and JamBase filter server-side;
     re-filtering their rows would second-guess a match they already made (PM-47) and could
     turn an alias hit into a false absence. Filter the leg with no filter, nothing else.
-  - **Both legs are fuzzy, and TM is the fuzzier one** — its `keyword` matches VENUE
-    names, so "Eagles" returns a Deorro show at Atlanta Eagles Arena. JamBase's
-    `artistName` at least stays inside artist names, though it is a substring match
-    (returns Eagles of Death Metal and Eagles tributes). Neither is filtered: the rows are
-    honestly labelled with their real artist. Tightening artist relevance is a product
-    call in BACKLOG — do NOT reimplement TM's matching client-side (PM-47), and do it
-    across both legs or neither.
+  - **TM is ATTRACTION-routed (2026-07-17), not keyword-routed.** `keyword` is a text
+    search over the whole record: it matched VENUE names and could not find the act —
+    "Eagles" near Atlanta returned Eagles of Death Metal, a Deorro show at *Atlanta Eagles
+    Arena*, and a church event, and zero Eagles. `findAttractions()` resolves the name to
+    TM artist entities, then the handler fans out `events?attractionId=` per entity
+    (`allSettled`, so one bad attraction costs that act's shows and nothing else).
+    `keyword` remains ONLY as the fallback when TM has no attraction for a name.
+    **The filter everyone reaches for first was a dead end** — dropping Deorro/CAIN leaves
+    you with fewer rows, still not the Eagles.
+  - **TM's `keyword` resolves NO aliases** — `keyword="machine gun kelly"` returns 0 events
+    while the ATTRACTION `mgk` carries `aliases: ["machine gun kelly"]`. Ask the entity
+    endpoint, not the event endpoint.
+  - **Never trust `segmentName` on `/attractions`** — it still returns "Philadelphia Eagles"
+    (NFL) and "Colorado Eagles" (hockey). Gate on each attraction's own
+    `classifications[0].segment.name`, which is correct. That is reading TM's label, the
+    inverse of PM-47.
+  - JamBase's `artistName` remains a substring match (returns tributes) and is not filtered.
+    Rows are honestly labelled with their real billing; the summary says "matching".
 - `search_by_venue` — venue lookup → its upcoming events, from Ticketmaster **and**
   the metro's open feeds (2026-07-16). The feed leg is not optional: a feed-only
   room (Red Light Café) has no TM venue id, so a TM miss or outage must not decide
