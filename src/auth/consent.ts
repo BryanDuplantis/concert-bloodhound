@@ -38,6 +38,14 @@ export interface ConsentConfig {
   cookieKey: string;
   /** Set the cookie Secure flag (true when PUBLIC_BASE_URL is https). */
   secureCookie: boolean;
+  /**
+   * Public path prefix from PUBLIC_BASE_URL ("" at root, "/bloodhound" on the
+   * path-routed Pi deployment). The form action and the post-consent redirect
+   * must target the PREFIXED /authorize routes — a root-relative "/authorize"
+   * would leave the service's mount and land on the 443 listener's default
+   * backend (brain-mcp).
+   */
+  basePath: string;
 }
 
 function escapeHtml(s: string): string {
@@ -179,6 +187,7 @@ class FailureWindow {
 
 function renderForm(
   res: Response,
+  basePath: string,
   params: Record<string, string>,
   opts: { error?: boolean } = {},
 ): void {
@@ -213,7 +222,7 @@ function renderForm(
   .err{color:#7a1e1e;font-size:.85rem;margin:0 0 1rem}
 </style></head>
 <body>
-  <form method="POST" action="/authorize/consent" autocomplete="off">
+  <form method="POST" action="${escapeHtml(basePath)}/authorize/consent" autocomplete="off">
     <h1>Authorize connector</h1>
     <p class="sub">Concert Bloodhound wants to grant a connector access to concert search.</p>
     ${errBanner}
@@ -261,7 +270,7 @@ export function createConsentHandlers(config: ConsentConfig): ConsentHandlers {
       if (k === "password") continue;
       if (typeof v === "string") params[k] = v;
     }
-    renderForm(res, params);
+    renderForm(res, config.basePath, params);
   };
 
   const submit: RequestHandler = async (req: Request, res: Response): Promise<void> => {
@@ -293,7 +302,7 @@ export function createConsentHandlers(config: ConsentConfig): ConsentHandlers {
       // the re-rendered HTML form, not a JSON error surface.
       res.locals.logCode = "consent-bad-password";
       res.status(401);
-      renderForm(res, params, { error: true });
+      renderForm(res, config.basePath, params, { error: true });
       return;
     }
 
@@ -303,7 +312,7 @@ export function createConsentHandlers(config: ConsentConfig): ConsentHandlers {
     // req.query) recomputes the identical binding and passes.
     res.cookie(COOKIE_NAME, signConsent(config.cookieKey, extractParams(body)), cookieOpts);
     const qs = new URLSearchParams(params).toString();
-    res.redirect(`/authorize${qs ? `?${qs}` : ""}`);
+    res.redirect(`${config.basePath}/authorize${qs ? `?${qs}` : ""}`);
   };
 
   return { gate, submit };

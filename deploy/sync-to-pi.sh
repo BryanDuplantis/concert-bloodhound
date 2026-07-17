@@ -27,6 +27,9 @@ PI_USER="${PI_USER:-brydup}"
 PI_HOST="${PI_HOST:-brain-mcp.local}"
 PI_PATH="${PI_PATH:-/home/$PI_USER/concert-bloodhound}"
 MCP_PORT="${MCP_PORT:-3003}"
+# Public path prefix (Option A: /bloodhound under the shared 443 Funnel). The
+# service mounts every route under it — the provers must hit the prefixed paths.
+BASE_PATH="${BASE_PATH:-/bloodhound}"
 SSH_TIMEOUT="${SSH_TIMEOUT:-10}"
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -54,10 +57,11 @@ rsync -a -e "ssh -o ConnectTimeout=$SSH_TIMEOUT" \
     package.json package-lock.json "${PI_USER}@${PI_HOST}:${PI_PATH}/"
 
 echo "[sync] npm ci + restart + prove-by-behavior on the Pi..."
-ssh -o ConnectTimeout="$SSH_TIMEOUT" "${PI_USER}@${PI_HOST}" bash -s -- "$MCP_PORT" "$PI_PATH" <<'REMOTE'
+ssh -o ConnectTimeout="$SSH_TIMEOUT" "${PI_USER}@${PI_HOST}" bash -s -- "$MCP_PORT" "$PI_PATH" "$BASE_PATH" <<'REMOTE'
 set -euo pipefail
 PORT="$1"
 APP="$2"
+BASE_PATH="$3"
 export PATH="$HOME/.local/bin:$PATH"
 
 [ -f "$APP/.env.local" ] || { echo "[pi] $APP/.env.local missing — run deploy/provision-pi.sh first" >&2; exit 1; }
@@ -79,7 +83,7 @@ SECRET="$(sed -n 's/^MCP_SECRET=//p' "$APP/.env.local" | tr -d '"')"
 [ -n "$SECRET" ] || { echo "[pi] MCP_SECRET empty in .env.local" >&2; exit 1; }
 
 # Proof 1 — authenticated initialize (protocol up, auth gate passes).
-code="$(curl -s -o /tmp/cb_init.json -w '%{http_code}' -X POST "http://127.0.0.1:${PORT}/mcp" \
+code="$(curl -s -o /tmp/cb_init.json -w '%{http_code}' -X POST "http://127.0.0.1:${PORT}${BASE_PATH}/mcp" \
   -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
@@ -92,7 +96,7 @@ echo "[pi] initialize: 200 + serverInfo"
 # Proof 2 — tools/call with structuredContent (the gate's done-bar: a bare
 # initialize 200 proves transport+auth, not that tool output survives the
 # HTTP path). Stateless transport accepts a single-shot call.
-code="$(curl -s -o /tmp/cb_call.json -w '%{http_code}' -X POST "http://127.0.0.1:${PORT}/mcp" \
+code="$(curl -s -o /tmp/cb_call.json -w '%{http_code}' -X POST "http://127.0.0.1:${PORT}${BASE_PATH}/mcp" \
   -H "Authorization: Bearer $SECRET" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \

@@ -30,6 +30,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const PORT = 3013;
 const BASE = `http://127.0.0.1:${PORT}`;
+// Path-prefixed config — the production shape on the Pi (Option A: /bloodhound
+// under the shared 443 Funnel). The smoke exercises the SAME prefix so the
+// prefix-aware mounts, metadata strings, and consent form action are what get
+// behaviorally proven, not the root layout production no longer runs.
+const PREFIX = "/bloodhound";
+const PUB = `${BASE}${PREFIX}`;
 const SECRET = "smoke-test-secret-not-a-real-credential";
 const PASSWORD = "smoke-test-password";
 const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
@@ -48,7 +54,7 @@ async function waitForHealth(deadlineMs: number): Promise<void> {
   const until = Date.now() + deadlineMs;
   while (Date.now() < until) {
     try {
-      const r = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(1000) });
+      const r = await fetch(`${PUB}/health`, { signal: AbortSignal.timeout(1000) });
       if (r.ok) return;
     } catch {
       // not up yet
@@ -59,7 +65,7 @@ async function waitForHealth(deadlineMs: number): Promise<void> {
 }
 
 async function mcpRoundTrip(label: string, token: string, withToolCall: boolean): Promise<void> {
-  const transport = new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), {
+  const transport = new StreamableHTTPClientTransport(new URL(`${PUB}/mcp`), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   });
   const client = new Client({ name: "smoke-http", version: "0.0.1" });
@@ -100,7 +106,7 @@ async function main(): Promise<void> {
         ...process.env,
         MCP_PORT: String(PORT),
         MCP_SECRET: SECRET,
-        PUBLIC_BASE_URL: BASE,
+        PUBLIC_BASE_URL: PUB,
         OAUTH_AUTHORIZE_PASSWORD: PASSWORD,
         OAUTH_ALLOWED_REDIRECT_URIS: CALLBACK,
         MCP_ALLOWED_ORIGINS: "https://claude.ai,https://claude.com",
@@ -115,11 +121,11 @@ async function main(): Promise<void> {
     await waitForHealth(10_000);
 
     // 1. /health
-    const health = (await (await fetch(`${BASE}/health`)).json()) as { service?: string };
+    const health = (await (await fetch(`${PUB}/health`)).json()) as { service?: string };
     check("health names the service", health.service === "concert-bloodhound");
 
     // 2. Unauthenticated /mcp → 401 with RFC 9728 discovery pointer
-    const unauth = await fetch(`${BASE}/mcp`, {
+    const unauth = await fetch(`${PUB}/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
@@ -127,30 +133,38 @@ async function main(): Promise<void> {
     check("unauthenticated /mcp is 401", unauth.status === 401);
     const www = unauth.headers.get("www-authenticate") ?? "";
     check(
-      "401 carries resource_metadata discovery",
-      www.includes(`resource_metadata="${BASE}/.well-known/oauth-protected-resource/mcp"`),
+      "401 carries resource_metadata discovery (RFC 9728 insertion form)",
+      www.includes(`resource_metadata="${BASE}/.well-known/oauth-protected-resource${PREFIX}/mcp"`),
       www,
     );
 
-    // 3. AS discovery
+    // 3. AS discovery — RFC 8414 insertion form, plus the appended-form fallback
     const disco = (await (
-      await fetch(`${BASE}/.well-known/oauth-authorization-server`)
-    ).json()) as { authorization_endpoint?: string; token_endpoint?: string };
+      await fetch(`${BASE}/.well-known/oauth-authorization-server${PREFIX}`)
+    ).json()) as { issuer?: string; authorization_endpoint?: string; token_endpoint?: string };
     check(
-      "AS discovery advertises authorize+token",
-      disco.authorization_endpoint === `${BASE}/authorize` && disco.token_endpoint === `${BASE}/token`,
+      "AS discovery advertises prefixed authorize+token",
+      disco.authorization_endpoint === `${PUB}/authorize` && disco.token_endpoint === `${PUB}/token`,
       JSON.stringify(disco),
+    );
+    const discoAppended = (await (
+      await fetch(`${PUB}/.well-known/oauth-authorization-server`)
+    ).json()) as { issuer?: string };
+    check(
+      "appended-form AS discovery serves the same issuer",
+      discoAppended.issuer === disco.issuer && !!disco.issuer,
+      JSON.stringify(discoAppended),
     );
 
     // 4. DCR — foreign redirect_uri rejected, allowlisted accepted
-    const badReg = await fetch(`${BASE}/register`, {
+    const badReg = await fetch(`${PUB}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uris: ["https://evil.example/cb"] }),
     });
     check("DCR rejects foreign redirect_uri", badReg.status === 400, String(badReg.status));
 
-    const reg = await fetch(`${BASE}/register`, {
+    const reg = await fetch(`${PUB}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uris: [CALLBACK], token_endpoint_auth_method: "client_secret_post" }),
@@ -174,17 +188,17 @@ async function main(): Promise<void> {
       state: "smoke-state",
     });
 
-    const form = await fetch(`${BASE}/authorize?${authzQs}`, { redirect: "manual" });
+    const form = await fetch(`${PUB}/authorize?${authzQs}`, { redirect: "manual" });
     const formHtml = await form.text();
     check(
-      "no-cookie /authorize renders the password form",
-      form.status === 200 && formHtml.includes('action="/authorize/consent"'),
+      "no-cookie /authorize renders the password form with a prefixed action",
+      form.status === 200 && formHtml.includes(`action="${PREFIX}/authorize/consent"`),
       String(form.status),
     );
 
     const consentBody = (pw: string) =>
       new URLSearchParams({ password: pw, ...Object.fromEntries(authzQs) });
-    const badPw = await fetch(`${BASE}/authorize/consent`, {
+    const badPw = await fetch(`${PUB}/authorize/consent`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: consentBody("wrong-password"),
@@ -192,7 +206,7 @@ async function main(): Promise<void> {
     });
     check("wrong consent password is 401", badPw.status === 401, String(badPw.status));
 
-    const goodPw = await fetch(`${BASE}/authorize/consent`, {
+    const goodPw = await fetch(`${PUB}/authorize/consent`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: consentBody(PASSWORD),
@@ -206,7 +220,7 @@ async function main(): Promise<void> {
     );
     const cookie = setCookie.split(";")[0]!;
 
-    const authz = await fetch(`${BASE}/authorize?${authzQs}`, {
+    const authz = await fetch(`${PUB}/authorize?${authzQs}`, {
       redirect: "manual",
       headers: { Cookie: cookie },
     });
@@ -219,7 +233,7 @@ async function main(): Promise<void> {
     );
 
     // 6. Token exchange + refresh
-    const tokenRes = await fetch(`${BASE}/token`, {
+    const tokenRes = await fetch(`${PUB}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -241,7 +255,7 @@ async function main(): Promise<void> {
       String(tokenRes.status),
     );
 
-    const refreshRes = await fetch(`${BASE}/token`, {
+    const refreshRes = await fetch(`${PUB}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -266,7 +280,7 @@ async function main(): Promise<void> {
     await mcpRoundTrip("oauth-token", tokens.access_token!, false);
 
     // Bad token still 401s
-    const badTok = await fetch(`${BASE}/mcp`, {
+    const badTok = await fetch(`${PUB}/mcp`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -1,5 +1,10 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { authorizationHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/authorize.js";
+import { tokenHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/token.js";
+import { clientRegistrationHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/register.js";
+import { metadataHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/metadata.js";
+import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import express, { type Request, type Response, type NextFunction } from "express";
 
 import { buildServer } from "./build-server.js";
@@ -149,19 +154,28 @@ export async function runHttp(): Promise<void> {
   // so parser 400/413 rejections carry a request id and log.
   app.use(requestLog);
 
+  const allowed = config.allowedOrigins;
+  const issuerUrl = new URL(config.publicBaseUrl);
+  const resourceServerUrl = new URL(`${config.publicBaseUrl}/mcp`);
+  const secureCookie = issuerUrl.protocol === "https:";
+
+  // Path-prefixed deployment (Option A fallback, gate cross-surface/bloodhound-
+  // remote-mcp): PUBLIC_BASE_URL may carry a path (https://<host>/bloodhound).
+  // Tailscale serve strips a mount prefix but re-appends the proxy TARGET's path
+  // (verified on the Pi 2026-07-17), so with mount path == target path the app
+  // sees the exact public path. Every route below mounts under basePath; the
+  // RFC well-knowns insert it per RFC 8414/9728. basePath "" = root deployment,
+  // identical to the pre-rework layout.
+  const basePath = issuerUrl.pathname === "/" ? "" : issuerUrl.pathname;
+
   // Tool-call payloads are small (search args), but keep the /mcp parser
   // separate from the OAuth routes: /token and DCR /register take tiny
   // payloads — cap them at 64KB so an oversized auth-endpoint body can't tie
   // up the Pi's single event loop. express.json is a no-op once req._body is
   // set, so the /mcp-scoped 1MB parser wins for /mcp and the 64KB default
   // applies to everything else.
-  app.use("/mcp", express.json({ limit: "1mb" }));
+  app.use(`${basePath}/mcp`, express.json({ limit: "1mb" }));
   app.use(express.json({ limit: "64kb" }));
-
-  const allowed = config.allowedOrigins;
-  const issuerUrl = new URL(config.publicBaseUrl);
-  const resourceServerUrl = new URL(`${config.publicBaseUrl}/mcp`);
-  const secureCookie = issuerUrl.protocol === "https:";
 
   // OAuth authorization server. Provider + persistent client/refresh store —
   // bloodhound's OWN store path (never shared with brain-mcp; see store.ts).
@@ -172,41 +186,81 @@ export async function runHttp(): Promise<void> {
     password: config.authorizePassword,
     cookieKey: config.secret,
     secureCookie,
+    basePath,
   });
-  // MUST precede mcpAuthRouter so /authorize is gated before the SDK handler runs.
-  app.all("/authorize", consent.gate);
-  app.post("/authorize/consent", express.urlencoded({ extended: false }), consent.submit);
+  // MUST precede the SDK authorize handler so /authorize is gated before it runs.
+  app.all(`${basePath}/authorize`, consent.gate);
+  app.post(`${basePath}/authorize/consent`, express.urlencoded({ extended: false }), consent.submit);
 
   // Global sliding-window rate limit on DCR /register, mounted BEFORE the SDK
-  // router so it runs first. Bounds unbounded client-registration growth of
+  // handler so it runs first. Bounds unbounded client-registration growth of
   // clients.json. 429 + Retry-After on cap.
-  app.post("/register", createRegisterRateLimit());
+  app.post(`${basePath}/register`, createRegisterRateLimit());
 
-  // SDK OAuth router: /token, DCR /register, /.well-known/* discovery.
+  // SDK OAuth endpoints, composed by hand instead of mcpAuthRouter: the router's
+  // createOAuthMetadata builds endpoints with root-relative `new URL("/authorize",
+  // base)`, which STRIPS a path-carrying issuer's prefix — the exact breakage the
+  // parent resolution named. Same SDK handlers, same defaults (built-in rate
+  // limits included); only the metadata strings and mount paths are prefix-aware.
   // clientSecretExpirySeconds:0 — non-expiring; the 30-day default would silently
-  // kill the connector in a month (designed-vs-deployed landmine).
+  // kill the connector in a month (designed-vs-deployed landmine). No /revoke:
+  // FileOAuthProvider implements no revokeToken (unchanged from the router, which
+  // mounted it conditionally).
+  const oauthMetadata: OAuthMetadata = {
+    issuer: issuerUrl.href,
+    authorization_endpoint: `${config.publicBaseUrl}/authorize`,
+    token_endpoint: `${config.publicBaseUrl}/token`,
+    registration_endpoint: `${config.publicBaseUrl}/register`,
+    response_types_supported: ["code"],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    scopes_supported: ["mcp:tools"],
+  };
+  app.use(`${basePath}/authorize`, authorizationHandler({ provider }));
+  app.use(`${basePath}/token`, tokenHandler({ provider }));
   app.use(
-    mcpAuthRouter({
-      provider,
-      issuerUrl,
-      baseUrl: issuerUrl,
-      resourceServerUrl,
-      scopesSupported: ["mcp:tools"],
-      clientRegistrationOptions: { clientSecretExpirySeconds: 0 },
+    `${basePath}/register`,
+    clientRegistrationHandler({
+      clientsStore: provider.clientsStore,
+      clientSecretExpirySeconds: 0,
     }),
   );
 
-  app.get("/health", (_req, res) => {
+  // Discovery documents. RFC 8414/9728 insert well-known between host and the
+  // issuer/resource path, so these live at the HOST root — on the Pi each gets
+  // its own tailscale mount alongside ${basePath}. The appended-form fallbacks
+  // (issuer + /.well-known/...) ride the ${basePath} mount for clients that
+  // don't implement the insertion rule; skipped at root where they'd duplicate.
+  const protectedResourceMetadata = {
+    resource: resourceServerUrl.href,
+    authorization_servers: [issuerUrl.href],
+    scopes_supported: ["mcp:tools"],
+  };
+  app.use(
+    `/.well-known/oauth-protected-resource${resourceServerUrl.pathname}`,
+    metadataHandler(protectedResourceMetadata),
+  );
+  app.use(`/.well-known/oauth-authorization-server${basePath}`, metadataHandler(oauthMetadata));
+  if (basePath) {
+    app.use(
+      `${basePath}/.well-known/oauth-protected-resource/mcp`,
+      metadataHandler(protectedResourceMetadata),
+    );
+    app.use(`${basePath}/.well-known/oauth-authorization-server`, metadataHandler(oauthMetadata));
+  }
+
+  app.get(`${basePath}/health`, (_req, res) => {
     res.json({ status: "ok", service: "concert-bloodhound", version: "0.1.0" });
   });
 
   // RFC 9728 discovery: the 401 points OAuth clients at the protected-resource
-  // metadata, which the SDK mounts at /.well-known/oauth-protected-resource<rsPath>.
-  const resourceMetadataUrl = `${config.publicBaseUrl}/.well-known/oauth-protected-resource${resourceServerUrl.pathname}`;
-  app.use("/mcp", originMiddleware(allowed));
-  app.use("/mcp", combinedAuthMiddleware(config.secret, provider, resourceMetadataUrl));
+  // metadata (host-root insertion form — the same URL mounted above).
+  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceServerUrl);
+  app.use(`${basePath}/mcp`, originMiddleware(allowed));
+  app.use(`${basePath}/mcp`, combinedAuthMiddleware(config.secret, provider, resourceMetadataUrl));
 
-  app.post("/mcp", async (req, res) => {
+  app.post(`${basePath}/mcp`, async (req, res) => {
     const server = buildServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
