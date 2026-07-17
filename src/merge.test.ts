@@ -36,6 +36,7 @@ function concert(p: Partial<Concert>): Concert {
     availability: "Availability unknown",
     url: null,
     ageRestriction: null,
+    description: null,
     source: "Ticketmaster",
     ...p,
   };

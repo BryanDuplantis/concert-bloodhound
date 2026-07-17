@@ -202,12 +202,40 @@ Two triage lessons, both earned the hard way in this section:
    2026) horizon — each source reports its own bound, not a shared one. A same-window
    query with real results, and a horizon-bound query, both stayed caveat-free.
 
-4. **[feature] Description / door-time / price are dropped.** The RSS description carries real
-   price ("$20 adv / $30 doors"), door time ("Doors @ 7 PM"), and genre hints ("Jazz Funk")
-   as free text — all surfaced as `null` today (Concert has no description field; door-time/
-   price parsing was deferred as fragile under "never invent"). Options: (a) pass the
-   HTML-stripped description through on a new optional field; (b) a careful, fixture-tested
-   door-time/price extractor. Honest-but-lossy today; the data exists in the feed.
+4. **[feature] Description / door-time / price are dropped — ✅ SHIPPED 2026-07-17 (option (a)).**
+   Re-probed live before building (Red Light RSS `<description>`, Cobb iCal `DESCRIPTION`) —
+   both still carry real price/door-time/genre-hint free text, confirming the filed diagnosis.
+   Also probed The EARL's Freshtix HTML block past its price div: nothing extra there (only a
+   "Find Tickets" button), so no change needed on that source — it already gets `time`/`priceMin`/
+   `priceMax` from structured divs, not free text.
+
+   **Chose (a), not (b), on inspection of the actual live data.** Red Light's price lines are
+   genuinely multi-tier and inconsistently formatted across items (`"$15 Adv – $20 Door"`,
+   `"GA: $15 Adv – $20 Door / VIP: $25 Adv – $35 Door"`, `"NO COVER"`, `"$15 Adv • $20 Doors •
+   $30 VIP"`) — a structured extractor there would be exactly the fragile parser the original
+   diagnosis deferred. Building it was the extra-risk path with no dominant win; passing the
+   source's own words through untouched has zero invention risk and surfaces the same data a
+   human would read anyway.
+
+   New `Concert.description: string | null` (`types.ts`), populated at three sites: Red Light
+   (`redlight.ts`, RSS `<description>` — previously not even parsed, only title/link were),
+   Cobb (`feeds/index.ts`, `ICalEvent.description` — already parsed by `ical.ts`, just dropped
+   at the Concert-mapping boundary), and explicitly `null` at TM/JamBase/Freshtix (out of scope
+   — no extra prose exists there beyond what's already structured). New `sanitizeDescription`
+   sits alongside `sanitizeText` in the M3 boundary: same control-char strip and length cap
+   (600 chars, well above `MAX_FIELD`'s 256 — descriptions are prose, not a label) but
+   PRESERVES line breaks, since a description's lines are structure (show time / price / door
+   time each on their own line) — collapsing them the way `sanitizeText` does would run the
+   header lines together illegibly. `format.ts` renders a `Details:` block, indented, only when
+   present. Description is never parsed into `priceMin`/`priceMax`/`time` — the fragile
+   extraction stays deferred; this only ever surfaces the source's own words.
+
+   Live-verified 2026-07-17: Red Light Cabaret Club concert carries its full multi-line
+   description (`FRI • JUL 31 • 7 PM / $15 Adv – $25 Doors.../Doors @ 6 PM` + body prose, capped
+   at 600 chars); a Cobb Jukebox Giants event carries its iCal description prose; an EARL
+   concert's `description` is `null`, confirmed both via a direct `fetchMetroFeedsDetailed` call
+   and over the live `smoke:mcp` stdio protocol (`Details:` block renders for Red Light, absent
+   for EARL).
 
 ---
 

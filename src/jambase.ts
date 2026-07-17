@@ -256,6 +256,9 @@ export function normalizeJamBaseEvent(e: any): Concert {
     availability: mapEventStatus(e?.eventStatus),
     url: safeUrl(e?.url ?? offer?.url),
     ageRestriction: null,
+    // JamBase's structured fields cover price/time/venue already; no extra
+    // prose field is mapped here (out of scope for this pass — see BACKLOG.md).
+    description: null,
     source: "JamBase",
   };
 }

@@ -61,6 +61,11 @@ function toConcert(ev: ICalEvent, src: FeedSource): Concert {
     availability: "Availability unknown",
     url: safeUrl(ev.url),
     ageRestriction: null,
+    // The organizer's own DESCRIPTION prose, already iCal-unescaped and
+    // entity-decoded by ical.ts. Real free text (often names an admission
+    // price or hours in prose) — never parsed into structured fields, just
+    // passed through honestly.
+    description: ev.description,
     source: src.name,
   };
 }

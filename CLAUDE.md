@@ -102,7 +102,16 @@ SUMMARY classifier, no canonical vocab.
   6:00 PM and 8:00 PM, two event ids). Dropping time there would collapse a
   double-header and hide a bookable show. Run `dedupeWithinSource` on each source's
   list BEFORE `mergeConcerts`, which assumes self-consistent inputs.
-- `src/types.ts` — Zod `Concert` schema = the typed output contract.
+- `src/types.ts` — Zod `Concert` schema = the typed output contract. Includes
+  `description: string | null` (shipped 2026-07-17, closing BACKLOG item 4) —
+  the source's own raw free text (Red Light RSS, Cobb iCal only; TM/JamBase/
+  Freshtix carry no extra prose beyond their structured fields), hardened by
+  `sanitizeDescription` (like `sanitizeText` but preserves line breaks — a
+  description's lines are structure, not noise — and caps at 600 chars, not
+  256). Never parsed into `priceMin`/`priceMax`/`time`: multi-tier,
+  inconsistently formatted price text ("GA: $15 Adv – $20 Door / VIP: $25...")
+  is exactly the fragile extraction the original diagnosis deferred — this
+  passes the words through instead of guessing structure from them.
 - `src/format.ts` — pure formatters (price/date/time/result + source attribution,
   incl. the required `Powered by JamBase` line).
 - `src/smoke.ts`, `src/smoke-mcp.ts`, `src/smoke-feeds.ts`, `src/smoke-jambase.ts` —

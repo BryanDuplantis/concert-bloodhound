@@ -87,6 +87,7 @@ function stripHtml(s: string): string {
 interface RssItem {
   title?: string;
   link?: string;
+  description?: string;
 }
 
 const parser = new XMLParser({
@@ -104,6 +105,10 @@ export function parseRedLightItems(xml: string): RssItem[] {
   return arr.map((it: any) => ({
     title: it?.title != null ? String(it.title) : undefined,
     link: it?.link != null ? String(it.link) : undefined,
+    // <description> is CDATA-wrapped plain text (price/door-time/genre free
+    // text) — distinct from <content:encoded>, which is the HTML gallery
+    // block and stays unused.
+    description: it?.description != null ? String(it.description) : undefined,
   }));
 }
 
@@ -112,7 +117,10 @@ export function parseRedLightItems(xml: string): RssItem[] {
  * never surface): empty title; a denylisted non-concert series (call B); an event
  * whose URL slug carries no clean date (call A — `genre`/feeds never guess, and a
  * dateless concert is useless and dishonest). genre is null per the standing rule;
- * door time is fragile free text ("Doors @ 7") so `time` stays null — never invent.
+ * door time and price are fragile free text ("Doors @ 7", multi-tier "GA: $15 Adv
+ * – $20 Door / VIP: $25…") so `time`/`priceMin`/`priceMax` stay null — never
+ * invent structured fields from prose. `description` carries that same prose
+ * through unparsed (BACKLOG item 4) so a reader can see it themselves.
  */
 export function itemToConcert(item: RssItem, src: FeedSource): Concert | null {
   const title = stripHtml(item.title ?? "");
@@ -136,6 +144,9 @@ export function itemToConcert(item: RssItem, src: FeedSource): Concert | null {
     availability: "Availability unknown",
     url: safeUrl(item.link),
     ageRestriction: null,
+    // Raw RSS description — carries the price/door-time/genre-hint free text
+    // this feed never structures. Never parsed, just surfaced (see types.ts).
+    description: item.description ?? null,
     source: src.name,
   };
 }

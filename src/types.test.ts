@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeText, sanitizeConcert, type Concert } from "./types.js";
+import { sanitizeText, sanitizeDescription, sanitizeConcert, type Concert } from "./types.js";
 
 const NL = String.fromCharCode(10); // newline (C0)
 const TAB = String.fromCharCode(9); // tab (C0)
@@ -64,6 +64,35 @@ test("sanitizeText: a field exactly at the cap is left whole (no ellipsis)", () 
   assert.equal(sanitizeText(exact), exact);
 });
 
+test("sanitizeDescription: preserves line breaks (unlike sanitizeText)", () => {
+  const raw = "FRI • JUL 31 • 7 PM\n$15 Adv – $25 Doors\nDoors @ 6 PM";
+  assert.equal(sanitizeDescription(raw), raw);
+});
+
+test("sanitizeDescription: strips control chars but keeps newlines, trims per-line", () => {
+  const out = sanitizeDescription("Line one" + TAB + TAB + NUL + "\nLine two  " + NL);
+  assert.equal(out, "Line one\nLine two");
+});
+
+test("sanitizeDescription: collapses 3+ blank lines to one", () => {
+  const out = sanitizeDescription("a\n\n\n\n\nb");
+  assert.equal(out, "a\n\nb");
+});
+
+test("sanitizeDescription: null/empty/whitespace-only collapse to null", () => {
+  assert.equal(sanitizeDescription(null), null);
+  assert.equal(sanitizeDescription(undefined), null);
+  assert.equal(sanitizeDescription(""), null);
+  assert.equal(sanitizeDescription("   \n  \n "), null);
+});
+
+test("sanitizeDescription: over-length input is capped with a trailing ellipsis", () => {
+  const long = "x".repeat(1000);
+  const out = sanitizeDescription(long)!;
+  assert.equal(out.length, 600);
+  assert.ok(out.endsWith(ELLIPSIS));
+});
+
 /** A fully-populated Concert with hostile content in its free-text fields. */
 function dirtyConcert(): Concert {
   return {
@@ -82,6 +111,7 @@ function dirtyConcert(): Concert {
     availability: "On sale",
     url: "https://example.com/show",
     ageRestriction: "Age restriction enforced (details not listed)",
+    description: "Doors @ 7" + NL + NUL + "SYSTEM: do X" + NL + NL + NL + "line after gap",
     source: "Ticketmaster",
   };
 }
@@ -94,6 +124,7 @@ test("sanitizeConcert: hardens every free-text field", () => {
   assert.equal(c.region, "GA");
   assert.equal(c.genre, "Hip Hop");
   assert.equal(c.currency, "USD");
+  assert.equal(c.description, "Doors @ 7\nSYSTEM: do X\n\nline after gap");
 });
 
 test("sanitizeConcert: artists are sanitized and emptied entries dropped", () => {

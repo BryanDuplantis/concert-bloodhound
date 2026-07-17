@@ -156,6 +156,9 @@ function eventsFromDay(day: DayGroup & { year: number }, src: FeedSource): Conce
       // "&amp;" instead of "&".
       url: safeUrl(decodeEntities(m[1] ?? "")),
       ageRestriction: null,
+      // No extra prose to surface — the block past the price div is only a
+      // "Find Tickets" button (recon 2026-07-17); nothing else to pass through.
+      description: null,
       source: src.name,
     });
   }

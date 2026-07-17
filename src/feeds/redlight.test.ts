@@ -77,6 +77,11 @@ const RSS_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
   <item>
     <title>The Sammy Hanson Trio (Jazz)</title>
     <link>https://redlightcafe.com/events/the-sammy-hanson-trio-jazz-jun-23-2026</link>
+    <description><![CDATA[TUE • JUN 23 • 8 PM
+$10 Adv – $15 Door
+Doors @ 7:30 PM
+
+BUY TICKETS]]></description>
   </item>
   <item>
     <title>C. Ellet&#8217;s &amp; the Quartet</title>
@@ -100,6 +105,15 @@ test("parseRedLightItems: parses items, decodes entities, keeps title a string",
   assert.ok(items[0]!.link!.endsWith("jun-23-2026"));
 });
 
+test("parseRedLightItems: CDATA description comes through as plain multi-line text", () => {
+  const items = parseRedLightItems(RSS_FIXTURE);
+  assert.equal(
+    items[0]!.description,
+    "TUE • JUN 23 • 8 PM\n$10 Adv – $15 Door\nDoors @ 7:30 PM\n\nBUY TICKETS",
+  );
+  assert.equal(items[1]!.description, undefined); // items with no <description> stay undefined
+});
+
 test("itemToConcert: a dated music item → Concert with genre:null, constant venue, slug date", () => {
   const items = parseRedLightItems(RSS_FIXTURE);
   const c = itemToConcert(items[0]!, SRC)!;
@@ -114,6 +128,17 @@ test("itemToConcert: a dated music item → Concert with genre:null, constant ve
   assert.equal(c.priceMin, null);
   assert.equal(c.source, "Red Light Café");
   assert.deepEqual(c.artists, ["The Sammy Hanson Trio (Jazz)"]);
+  // description carries the raw prose through — never parsed into priceMin/time.
+  assert.equal(
+    c.description,
+    "TUE • JUN 23 • 8 PM\n$10 Adv – $15 Door\nDoors @ 7:30 PM\n\nBUY TICKETS",
+  );
+});
+
+test("itemToConcert: an item with no <description> gets description: null, not undefined", () => {
+  const items = parseRedLightItems(RSS_FIXTURE);
+  const c = itemToConcert(items[1]!, SRC)!;
+  assert.equal(c.description, null);
 });
 
 test("itemToConcert: call B — denylisted 'Running Society' series is dropped", () => {

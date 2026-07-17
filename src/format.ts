@@ -45,6 +45,10 @@ export function formatConcert(c: Concert, idx: number): string {
     `   Ticket Link: ${c.url ?? "Link not listed"}`,
   ];
   if (c.ageRestriction) lines.push(`   Age: ${c.ageRestriction}`);
+  if (c.description) {
+    const indented = c.description.split("\n").map((l) => (l ? `     ${l}` : l)).join("\n");
+    lines.push(`   Details:\n${indented}`);
+  }
   return lines.join("\n");
 }
 

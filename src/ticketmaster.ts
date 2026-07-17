@@ -157,6 +157,9 @@ function normalizeEvent(e: any): Concert {
     ageRestriction: e?.ageRestrictions?.legalAgeEnforced
       ? "Age restriction enforced (details not listed)"
       : null,
+    // TM's structured fields cover price/time/venue already; no extra prose
+    // field is mapped here (out of scope for this pass — see BACKLOG.md).
+    description: null,
     source: "Ticketmaster",
   };
 }
