@@ -5,8 +5,8 @@ import { z } from "zod";
 import { findAttractions, findVenue, searchEvents, TicketmasterError } from "./ticketmaster.js";
 import { searchEvents as searchJamBaseEvents, jambaseMetroId } from "./jambase.js";
 import { resolveLatLong, isLatLong, nearestMetroKey } from "./geo.js";
-import { fetchMetroFeeds } from "./feeds/index.js";
-import { feedMetros } from "./feeds/registry.js";
+import { fetchMetroFeeds, fetchMetroFeedsDetailed } from "./feeds/index.js";
+import { feedMetros, sourcesForMetro } from "./feeds/registry.js";
 import {
   applyDateWindow,
   applyMaxPrice,
@@ -387,18 +387,17 @@ server.registerTool(
           })
         : Promise.resolve([] as Concert[]),
       geo?.metroKey
-        ? fetchMetroFeeds(geo.metroKey, {
+        ? fetchMetroFeedsDetailed(geo.metroKey, {
             start: args.startDate ?? todayLocal(),
             end: args.endDate,
           })
-        : Promise.resolve([] as Concert[]),
+        : Promise.resolve({ concerts: [] as Concert[], horizons: new Map<string, string | null>() }),
     ]);
 
     const tm = tmRes.status === "fulfilled" ? tmRes.value : [];
     if (tmRes.status === "rejected") console.error(`Ticketmaster failed: ${errMsg(tmRes.reason)}`);
-    const feed = (feedRes.status === "fulfilled" ? feedRes.value : []).filter((c) =>
-      venueMatches(c.venue, args.venue),
-    );
+    const feedResult = feedRes.status === "fulfilled" ? feedRes.value : { concerts: [], horizons: new Map() };
+    const feed = feedResult.concerts.filter((c) => venueMatches(c.venue, args.venue));
     if (feedRes.status === "rejected") console.error(`Feeds failed: ${errMsg(feedRes.reason)}`);
 
     // Only now is "no such venue" honest — every source has been consulted.
@@ -420,11 +419,26 @@ server.registerTool(
         ? `${venue.name} (${venue.city})`
         : venue.name
       : (feed[0]?.venue ?? args.venue);
-    const summary = results.length
+    let summary = results.length
       ? `Here ${results.length === 1 ? "is an" : "are"} upcoming concert${
           results.length === 1 ? "" : "s"
         } at ${label}:`
       : `I found ${label}, but no upcoming concerts are currently listed there for that window.`;
+    // A zero-result answer for a venue that's ALSO a registered rolling-window
+    // feed source (Red Light Café, The EARL) can't be read as "confirmed dark"
+    // past that source's own horizon — the feed simply doesn't reach further,
+    // it isn't asserting nothing is booked there. Only fires when the query
+    // actually asks (or, with no endDate, implicitly asks) past the horizon;
+    // a window entirely within confirmed coverage gets no caveat.
+    if (results.length === 0 && geo?.metroKey) {
+      const matchedSource = sourcesForMetro(geo.metroKey).find((s) => venueMatches(s.name, args.venue));
+      const horizon = matchedSource ? feedResult.horizons.get(matchedSource.name) : undefined;
+      if (matchedSource && horizon && (!args.endDate || args.endDate > horizon)) {
+        summary +=
+          ` (${matchedSource.name}'s feed confirms coverage only through ${horizon} — ` +
+          `nothing after that date is confirmed absent, just not yet listed.)`;
+      }
+    }
     return ok(results, summary);
   },
 );

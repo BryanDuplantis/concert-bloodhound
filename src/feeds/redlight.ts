@@ -1,7 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import type { Concert } from "../types.js";
 import { safeUrl, sanitizeConcert } from "../types.js";
-import type { FeedSource } from "./registry.js";
+import type { FeedFetchResult, FeedSource } from "./registry.js";
 
 /**
  * Red Light Café (Squarespace) RSS open-feed source.
@@ -151,11 +151,18 @@ function inWindow(date: string, start?: string, end?: string): boolean {
  * is applied at this source-function return (the M3 boundary) — AFTER field
  * shaping, BEFORE merge/dedup — so untrusted feed text is hardened and dedup keys
  * stay consistent with the other sources.
+ *
+ * Returns a `horizon` alongside the windowed concerts — the latest date among
+ * ALL dated items this fetch parsed, before any window filtering. The feed is a
+ * Squarespace RSS capped at its ~20 most recent posts, so this horizon is a real,
+ * short rolling boundary: a wide search asking past it must not read the gap as
+ * the venue going dark — it's the feed's own reach ending, not a confirmed
+ * absence of shows.
  */
 export async function fetchRedLightConcerts(
   src: FeedSource,
   window: { start?: string; end?: string } = {},
-): Promise<Concert[]> {
+): Promise<FeedFetchResult> {
   const res = await fetch(src.url, {
     headers: {
       "User-Agent": "concert-bloodhound/0.1",
@@ -164,9 +171,13 @@ export async function fetchRedLightConcerts(
   });
   if (!res.ok) throw new Error(`Red Light feed HTTP ${res.status}`);
   const xml = await res.text();
-  return parseRedLightItems(xml)
+  const items = parseRedLightItems(xml)
     .map((it) => itemToConcert(it, src))
-    .filter((c): c is Concert => c !== null)
+    .filter((c): c is Concert => c !== null);
+  const horizon =
+    items.length > 0 ? items.reduce((max, c) => (c.date! > max ? c.date! : max), items[0]!.date!) : null;
+  const concerts = items
     .filter((c) => inWindow(c.date!, window.start, window.end))
     .map(sanitizeConcert);
+  return { concerts, horizon };
 }

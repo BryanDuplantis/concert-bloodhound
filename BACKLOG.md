@@ -177,11 +177,30 @@ Two triage lessons, both earned the hard way in this section:
    misfiling: `search_by_venue` had zero smoke coverage, so the false-absence was never observed.
    Coverage added in the same commit.
 
-3. **[honesty] Feed-horizon under-representation is invisible.** An open-feed source with a
-   short rolling window (Red Light's Squarespace RSS = ~20 most-recent posts, currently
-   reaching only ~2026-06-30) is silently under-represented in a wide merged search — looks
-   like the venue goes quiet, when really the feed's horizon ended. Surface a per-source
-   "horizon ends MM/DD" signal so a thin tail reads as a feed limit, not an empty calendar.
+3. **[honesty] Feed-horizon under-representation is invisible — ✅ FIXED 2026-07-17
+   (`FeedFetchResult.horizon`, `fetchMetroFeedsDetailed`).** Scoped to `search_by_venue`
+   specifically — the tool this bug class actually hits, since a feed-only single-venue
+   source (Red Light Café, The EARL) doubling as "the answer" is exactly where a rolling
+   window silently reading as "venue went dark" costs a wrong answer.
+
+   Each RSS/HTML source now returns `{ concerts, horizon }` — `horizon` is the latest date
+   in that source's FULL unfiltered fetch (before any window trimming), computed at zero
+   extra network cost since it comes from data already in memory. `fetchMetroFeeds` stays a
+   thin `.concerts`-only wrapper for `search_concerts`/`search_by_artist`, which don't need
+   this (their result sets lean on TM/JamBase; a thin feed contribution there is lower
+   stakes than a confidently-empty single-venue answer). `search_by_venue` alone calls the
+   new `fetchMetroFeedsDetailed` and, on a zero-result answer for a venue that canonically
+   matches a registered feed source name (`venueMatches`), appends a coverage caveat IF the
+   query's `endDate` (or its absence — an unbounded ask implicitly asks past any finite
+   horizon) extends beyond that source's horizon. A window fully inside confirmed coverage
+   gets no caveat, verified live (a normal near-term query and a horizon-bound single-day
+   query both returned clean, caveat-free results).
+
+   Live-verified 2026-07-17: `search_by_venue("Red Light Cafe", endDate: 2027-01-31)` →
+   "…confirms coverage only through 2026-07-31 — nothing after that date is confirmed
+   absent, just not yet listed." Same for The EARL against its own (much longer, ~Nov
+   2026) horizon — each source reports its own bound, not a shared one. A same-window
+   query with real results, and a horizon-bound query, both stayed caveat-free.
 
 4. **[feature] Description / door-time / price are dropped.** The RSS description carries real
    price ("$20 adv / $30 doors"), door time ("Doors @ 7 PM"), and genre hints ("Jazz Funk")

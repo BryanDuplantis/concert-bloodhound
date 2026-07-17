@@ -5,6 +5,7 @@
  *
  * Build-order spec + provenance: docs/atlanta-source-map.md.
  */
+import type { Concert } from "../types.js";
 
 export type FeedType = "ical" | "rss" | "html";
 
@@ -55,6 +56,19 @@ export const FEED_SOURCES: FeedSource[] = [
     url: "https://badearl.freshtix.com/",
   },
 ];
+
+/**
+ * A source's own fetch, unfiltered by any caller's date window: the concerts it
+ * actually returned, plus the LATEST date among them ("horizon" — null if the
+ * source returned nothing dated). A rolling-window source (RSS "latest N posts",
+ * a single HTML calendar page) has a real horizon short of "forever"; a search
+ * that asks past it must not read the gap as "the venue went dark" — it's the
+ * feed's own reach ending, not a confirmed absence of shows.
+ */
+export interface FeedFetchResult {
+  concerts: Concert[];
+  horizon: string | null;
+}
 
 export function sourcesForMetro(metro: string): FeedSource[] {
   return FEED_SOURCES.filter((s) => s.metro === metro);

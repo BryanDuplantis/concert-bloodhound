@@ -186,6 +186,19 @@ SUMMARY classifier, no canonical vocab.
     zero-event parse — the structural-drift alarm the Phase-3 pattern requires;
     a genuine dark stretch at a working touring venue is implausible, so an
     empty parse of a 200 means the markup moved, not "no shows."
+  - **Feed-horizon coverage caveat — shipped 2026-07-17** (`fetchMetroFeedsDetailed`,
+    `FeedFetchResult.horizon` in `src/feeds/registry.ts`). A zero-result answer for a
+    venue that's ALSO a registered rolling-window feed source (Red Light Café's
+    ~20-post RSS, The EARL's HTML page) can't be read as "confirmed dark" past that
+    source's own reach — every RSS/HTML fetcher now also returns `horizon`, the
+    latest date in its FULL unfiltered parse (computed free from data already in
+    memory, no extra network call). `search_by_venue` alone consumes it: on zero
+    results for a venue matching a registered source name, if the query's `endDate`
+    (or its absence, since an unbounded ask implicitly asks past any finite horizon)
+    extends past that source's horizon, the summary appends a coverage caveat rather
+    than reading as confirmed silence. A window entirely inside confirmed coverage —
+    or a query naming a non-feed venue — gets no caveat; `fetchMetroFeeds` stays the
+    concerts-only wrapper `search_concerts`/`search_by_artist` use, unchanged.
 
 `search_concerts` and `search_by_artist` resolve a known metro (or an explicit
 `latlong`) to a geospatial `latlong`+`radius` search (default 30 mi) covering the

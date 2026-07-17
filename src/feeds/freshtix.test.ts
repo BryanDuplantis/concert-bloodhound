@@ -144,7 +144,7 @@ test("fetchFreshtixConcerts (via a fetch stub): decodes entities in title AND ur
   globalThis.fetch = (async () =>
     new Response(HTML_FIXTURE, { status: 200 })) as typeof fetch;
   try {
-    const concerts = await fetchFreshtixConcerts(SRC, {}, new Date("2026-07-17T12:00:00"));
+    const { concerts } = await fetchFreshtixConcerts(SRC, {}, new Date("2026-07-17T12:00:00"));
     assert.equal(concerts.length, 2);
 
     const first = concerts[0]!;
@@ -190,13 +190,32 @@ test("fetchFreshtixConcerts: window filtering excludes out-of-range dates", asyn
   globalThis.fetch = (async () =>
     new Response(HTML_FIXTURE, { status: 200 })) as typeof fetch;
   try {
-    const concerts = await fetchFreshtixConcerts(
+    const { concerts } = await fetchFreshtixConcerts(
       SRC,
       { start: "2026-07-18", end: "2026-07-18" },
       new Date("2026-07-17T12:00:00"),
     );
     assert.equal(concerts.length, 1);
     assert.equal(concerts[0]!.date, "2026-07-18");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("fetchFreshtixConcerts: horizon is the latest date in the FULL parse, unaffected by window trimming", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(HTML_FIXTURE, { status: 200 })) as typeof fetch;
+  try {
+    // Fixture's latest event is 2026-07-18; a window that excludes it must
+    // still report the true horizon, not the trimmed result set's max date.
+    const { concerts, horizon } = await fetchFreshtixConcerts(
+      SRC,
+      { start: "2026-07-17", end: "2026-07-17" },
+      new Date("2026-07-17T12:00:00"),
+    );
+    assert.equal(concerts.length, 1); // only the 7/17 show survives the window
+    assert.equal(horizon, "2026-07-18"); // but the horizon still sees 7/18
   } finally {
     globalThis.fetch = realFetch;
   }

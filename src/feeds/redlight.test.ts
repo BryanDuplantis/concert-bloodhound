@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { slugDate, parseRedLightItems, itemToConcert } from "./redlight.js";
+import { slugDate, parseRedLightItems, itemToConcert, fetchRedLightConcerts } from "./redlight.js";
 import { sanitizeConcert } from "../types.js";
 import type { FeedSource } from "./registry.js";
 
@@ -141,4 +141,39 @@ test("itemToConcert + sanitizeConcert: control chars in title are hardened at th
   );
   assert.equal(c.name, "Jazz Night"); // M3 sanitize fired
   assert.equal(c.genre, null);
+});
+
+// ----- horizon (the RSS feed's own rolling-window reach) -----
+
+test("fetchRedLightConcerts: horizon is the latest slug date in the FULL parse, unaffected by window trimming or the date-less/denylisted drops", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(RSS_FIXTURE, { status: 200 })) as typeof fetch;
+  try {
+    // Fixture's latest dated, non-denylisted item is jul-04-2026; a window
+    // that excludes it must still report the true horizon.
+    const { concerts, horizon } = await fetchRedLightConcerts(SRC, {
+      start: "2026-06-01",
+      end: "2026-06-30",
+    });
+    assert.equal(concerts.length, 1); // only the jun-23 item survives the window
+    assert.equal(horizon, "2026-07-04"); // horizon still sees the jul-04 item
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("fetchRedLightConcerts: no dated items -> horizon is null, not a guess", async () => {
+  const realFetch = globalThis.fetch;
+  const NO_DATES = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <item><title>Some Show</title><link>https://redlightcafe.com/events/some-show</link></item>
+</channel></rss>`;
+  globalThis.fetch = (async () => new Response(NO_DATES, { status: 200 })) as typeof fetch;
+  try {
+    const { concerts, horizon } = await fetchRedLightConcerts(SRC, {});
+    assert.equal(concerts.length, 0);
+    assert.equal(horizon, null);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

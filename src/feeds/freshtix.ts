@@ -1,7 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import type { Concert } from "../types.js";
 import { safeUrl, sanitizeConcert } from "../types.js";
-import type { FeedSource } from "./registry.js";
+import type { FeedFetchResult, FeedSource } from "./registry.js";
 
 /**
  * The EARL (Atlanta) Freshtix calendar HTML open-feed source.
@@ -178,12 +178,18 @@ function inWindow(date: string, start?: string, end?: string): boolean {
  * PM-39-shaped gap this source exists to close — see the filed backlog task).
  * `fetchMetroFeeds` catches this via `Promise.allSettled` and logs it; other
  * sources are unaffected.
+ *
+ * Returns a `horizon` alongside the windowed concerts — the latest date in the
+ * FULL unfiltered parse, i.e. how far this page's own listing actually reaches.
+ * Freshtix has no rolling-window cap the way Red Light's "latest 20 posts" RSS
+ * does (it's one page of everything currently on sale), but the horizon is
+ * still real: past it, absence is "not yet on sale," not "confirmed dark."
  */
 export async function fetchFreshtixConcerts(
   src: FeedSource,
   window: { start?: string; end?: string } = {},
   now: Date = new Date(),
-): Promise<Concert[]> {
+): Promise<FeedFetchResult> {
   const res = await fetch(src.url, {
     headers: {
       "User-Agent":
@@ -201,7 +207,9 @@ export async function fetchFreshtixConcerts(
   if (all.length === 0) {
     throw new Error("Freshtix feed structural drift: day headers parsed but 0 events extracted");
   }
-  return all
+  const horizon = all.reduce((max, c) => (c.date! > max ? c.date! : max), all[0]!.date!);
+  const concerts = all
     .filter((c) => inWindow(c.date!, window.start, window.end))
     .map(sanitizeConcert);
+  return { concerts, horizon };
 }

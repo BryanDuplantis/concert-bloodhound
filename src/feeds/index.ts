@@ -11,7 +11,7 @@
 import type { Concert } from "../types.js";
 import { safeUrl, sanitizeConcert } from "../types.js";
 import { fetchICalText, parseICal, parseLocation, type ICalEvent } from "./ical.js";
-import { sourcesForMetro, type FeedSource } from "./registry.js";
+import { sourcesForMetro, type FeedFetchResult, type FeedSource } from "./registry.js";
 import { fetchRedLightConcerts } from "./redlight.js";
 import { fetchFreshtixConcerts } from "./freshtix.js";
 
@@ -65,20 +65,32 @@ function toConcert(ev: ICalEvent, src: FeedSource): Concert {
   };
 }
 
+export interface MetroFeedResult {
+  concerts: Concert[];
+  /**
+   * source name -> horizon (latest date that source's own unfiltered fetch
+   * reached, or null if it returned nothing dated). A source that errored or
+   * has no presence in this metro is simply absent from the map — only
+   * `fetchMetroFeedsDetailed` populates real entries.
+   */
+  horizons: Map<string, string | null>;
+}
+
 /**
  * Fetch + normalize all music events from a metro's open feeds, optionally
- * bounded to a [start, end] date window (YYYY-MM-DD). Returns [] for metros
- * with no registered feeds (no network performed).
+ * bounded to a [start, end] date window (YYYY-MM-DD), plus each source's own
+ * horizon (see `FeedFetchResult`). Returns an empty result for metros with no
+ * registered feeds (no network performed).
  */
-export async function fetchMetroFeeds(
+export async function fetchMetroFeedsDetailed(
   metro: string,
   window: { start?: string; end?: string } = {},
-): Promise<Concert[]> {
+): Promise<MetroFeedResult> {
   const sources = sourcesForMetro(metro);
-  if (sources.length === 0) return [];
+  if (sources.length === 0) return { concerts: [], horizons: new Map() };
 
   const settled = await Promise.allSettled(
-    sources.map(async (src) => {
+    sources.map(async (src): Promise<FeedFetchResult> => {
       // RSS/HTML sources own their full fetch→parse→normalize→sanitize
       // pipeline (event date, denylist, genre-null all live in the venue
       // module today — Red Light and The EARL are the only two). iCal
@@ -86,24 +98,39 @@ export async function fetchMetroFeeds(
       if (src.type === "rss") return fetchRedLightConcerts(src, window);
       if (src.type === "html") return fetchFreshtixConcerts(src, window);
       const events = await loadICal(src.url);
-      return events
-        .filter((e) => matchesMusic(e, src.musicCategories ?? []))
+      const dated = events.filter((e) => matchesMusic(e, src.musicCategories ?? []));
+      // Horizon from the FULL dated (but not window-trimmed) list — same
+      // "unfiltered fetch" contract the RSS/HTML sources return.
+      const horizon = dated.reduce<string | null>(
+        (max, e) => (e.date != null && (max == null || e.date > max) ? e.date : max),
+        null,
+      );
+      const concerts = dated
         .filter((e) => inWindow(e.date, window.start, window.end))
         // Harden each feed event's free text at the source boundary.
         .map((e) => sanitizeConcert(toConcert(e, src)));
+      return { concerts, horizon };
     }),
   );
 
-  const out: Concert[] = [];
+  const concerts: Concert[] = [];
+  const horizons = new Map<string, string | null>();
   settled.forEach((r, i) => {
+    const src = sources[i]!;
     if (r.status === "fulfilled") {
-      out.push(...r.value);
+      concerts.push(...r.value.concerts);
+      horizons.set(src.name, r.value.horizon);
     } else {
-      const src = sources[i];
-      console.error(
-        `Feed "${src?.name ?? "unknown"}" failed: ${(r.reason as Error)?.message ?? r.reason}`,
-      );
+      console.error(`Feed "${src.name}" failed: ${(r.reason as Error)?.message ?? r.reason}`);
     }
   });
-  return out;
+  return { concerts, horizons };
+}
+
+/** Concerts-only convenience wrapper for callers that don't need horizons. */
+export async function fetchMetroFeeds(
+  metro: string,
+  window: { start?: string; end?: string } = {},
+): Promise<Concert[]> {
+  return (await fetchMetroFeedsDetailed(metro, window)).concerts;
 }
