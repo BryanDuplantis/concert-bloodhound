@@ -351,22 +351,51 @@ category) but loose for a strict concert finder; consider a sub-filter if it pro
 
 ---
 
-## Web-app pivot — multi-source federated aggregator (NOT YET STARTED)
-_Referenced by `docs/atlanta-source-map.md` but not tracked here until now (2026-05-25)._
+## Web-app pivot — multi-source federated aggregator (NOT STARTED; premise RE-PROBED 2026-07-17 — coverage argument has dissolved into the MCP)
 
-The on-demand MCP nails "what's <artist> doing near me" but structurally misses
-the long tail — free civic series, university recitals, indie/DIY venues, and the
-free Atlanta Jazz Festival. The map's core finding: that tail lives in open
-iCal/RSS/JSON feeds (Trumba, Localist, venue RSS), not ticketing APIs — which
-favors a **background-fetch model** (poll feeds on a schedule into a local store)
-over pure on-demand, i.e. a small web app rather than (or alongside) the MCP.
+_Filed 2026-05-25 on the source map's core finding: the long tail lives in open
+feeds, favoring a background-fetch web app over the on-demand MCP. Re-probed per
+PM-57 before writing the phased plan the entry called for — and the premise did
+not survive. The MCP absorbed the tail the pivot was invented to catch._
 
-- **Build-order spec:** `docs/atlanta-source-map.md` — Tier 1 (clean open feeds),
-  Tier 2 (tiny static HTML), plus the verified dead-ends list.
-- **Vision mock:** `atlanta-this-weekend.html` is a hand-built mock of the digest
-  output — there is no generator for it yet.
-- **Independent of the JamBase blocker** (these feeds need no JamBase key).
-- Not scoped/phased — write a phased plan before building.
+**Tier 1 is EXHAUSTED (status audit annotated into `docs/atlanta-source-map.md`
+2026-07-17 — the table's per-row markers are now authoritative).** Of the map's
+10 sources: JamBase, TM-latlong, Cobb iCal, Red Light RSS all WIRED into the MCP;
+The EARL (filed "scrape-required") wired 2026-07-17 via the Freshtix HTML parser;
+Battery / Piedmont / GA Tech KILLED by recon 6/25; KSU/GSU Localist fall-gated
+(Aug+); Emory KILLED 2026-07-17 (below). Nothing in Tier 1 is left to build.
+
+**Emory / Schwartz Center — KILLED 2026-07-17 by recon. Do NOT re-propose as
+filed.** The mapped `ec-events.ics` is a GENERAL university calendar, not the
+Schwartz Center: 20 events, categories "University Events"/"Libraries", **zero
+music** (entrepreneurship clinics, HR workshops, a grief-support session). The
+map's "Classical / jazz / world. Verified live." does not hold today. Probe
+scoped per PM-48: this kills the URL, so the Schwartz pages were checked too —
+`schwartz.emory.edu` events page carries no feed link of any kind (0 matches for
+trumba/webcal/.ics/rss in the served HTML); `arts.emory.edu/calendar` 404s.
+Emory is reachable only by scraping their HTML calendar — same verdict class as
+Battery/Piedmont/GA Tech, different mechanism (a live feed that carries no
+music, vs no feed at all). Falsifier if revisiting: a Schwartz-specific machine
+feed appearing, or `ec-events.ics` growing a music category.
+
+**What the pivot uniquely adds today — the honest remainder:**
+1. **Tier-2 static civic pages** — Glover Park (6 free shows/yr, May–Sep season
+   half over), Kennesaw Depot (4/yr), Smyrna (403s on direct fetch): ~10
+   events/yr total. Note these DON'T require a web app — Freshtix proved the
+   registry takes `type: "html"` sources, so they'd fit the existing feed layer.
+2. **A rendered digest surface** — `atlanta-this-weekend.html` is still a
+   hand-built mock with no generator. This is push-vs-pull product surface, not
+   coverage.
+3. **A background-fetch store** — only needed for push-style digests or history;
+   the stateless on-demand model has handled everything shipped so far.
+
+**DECISION NEEDED (Tier 3, surfaced 2026-07-17) — do not write the phased plan
+until Bryan picks:** (a) re-scope the pivot around digest + background-fetch
+(product surface, not coverage); (b) fold Tier-2 statics into the existing MCP
+feed layer and drop the web app entirely; (c) shelve until the fall Localist
+window (Aug+) reopens and decide with that data. The original "write a phased
+plan before building" instruction predates this re-probe and would have planned
+against a dead premise.
 
 ---
 

@@ -44,20 +44,25 @@ the dead ends — is downstream of that.
 
 ## Tier 1 — Clean to consume (open API or published feed, no legal gray)
 
-Build these first. Each is an open REST API or a publicly published iCal/RSS/JSON feed.
+> **Status audit 2026-07-17 — this tier is EXHAUSTED; per-row markers below are
+> authoritative over the original prose.** Everything viable is already wired into
+> the MCP; the rest is killed by recon or gated to fall. Kill records live in
+> BACKLOG.md — a source marked ❌ must not be re-proposed from this table (that
+> stale-line trap already fired once: GA Tech, re-proposed 2026-07-16 from an
+> unannotated doc, three weeks after recon killed it).
 
 | Source | Mechanism | Endpoint | Coverage / notes |
 |---|---|---|---|
-| **JamBase Data API** | REST JSON | `https://data.jambase.com/v3/events?geoMetroId=[ATL-id]` | **Biggest single win.** 15+ yrs of data, touring **and** independent venues, metro geo-filter. Free Developer tier = 1,000 calls/mo, non-commercial, attribution required. Surfaces the Jazz Fest. Pricing: `data.jambase.com/pricing` |
-| **Ticketmaster Discovery** | REST JSON | `https://app.ticketmaster.com/discovery/v2/events?latlong=33.749,-84.388&radius=30&unit=miles` | Already integrated. **Switch from `city` to `latlong`+`radius`** for true metro/Cobb coverage — `postalCode` is text-match, not geospatial. Covers Cobb Energy PAC, Mable House, Fox, Tabernacle, Masquerade, Ameris Bank Amph. |
-| **Battery ATL (Trumba)** | iCal/RSS/XML | `https://www.trumba.com/calendars/atlbrv.ics` | Free green-space shows at The Battery (Cobb). Verified live. |
-| **Emory / Schwartz Center (Trumba)** | iCal/RSS/XML | `https://www.trumba.com/calendars/ec-events.ics` | Classical / jazz / world. Verified live. |
-| **KSU Bailey Performance Center (Localist)** | JSON API + iCal | `https://calendar.kennesaw.edu/api/2/events` | University recitals in Kennesaw (Cobb). Public read, no auth. Filter by music dept id. |
-| **GSU School of Music (Localist)** | JSON API + iCal | `https://calendar.gsu.edu/api/2/events?keyword=music` | 150+ events/yr. Per-event iCal export confirmed. |
-| **Georgia Tech Arts (Drupal RSS)** | RSS | `https://calendar.gatech.edu/taxonomy/term/12/feed` | Arts & Performance category feed confirmed. |
-| **Piedmont Park Conservancy** | iCal (The Events Calendar) | `webcal://piedmontpark.org/?post_type=tribe_events&ical=1&eventDisplay=list` | Park concerts/festivals. Verified live. |
-| **Cobb Travel & Tourism** | iCal | `https://travelcobb.org/events/list/?shortcode=24f53d40&hide_subsequent_recurrences=1&ical=1` | County-wide curated: Glover Park, Kennesaw series, Mable House free shows. Verified live. |
-| **Red Light Café (Squarespace)** | RSS | `http://redlightcafe.com/events?format=rss` | Indie venue; Squarespace native RSS. Confirmed live. |
+| ✅ WIRED 2026-05-25 — **JamBase Data API** | REST JSON | `https://data.jambase.com/v3/events?geoMetroId=[ATL-id]` | **Biggest single win.** 15+ yrs of data, touring **and** independent venues, metro geo-filter. Free Developer tier = 1,000 calls/mo, non-commercial, attribution required. Surfaces the Jazz Fest. Pricing: `data.jambase.com/pricing` |
+| ✅ WIRED (latlong since 2026-05-25) — **Ticketmaster Discovery** | REST JSON | `https://app.ticketmaster.com/discovery/v2/events?latlong=33.749,-84.388&radius=30&unit=miles` | Already integrated. **Switch from `city` to `latlong`+`radius`** for true metro/Cobb coverage — `postalCode` is text-match, not geospatial. Covers Cobb Energy PAC, Mable House, Fox, Tabernacle, Masquerade, Ameris Bank Amph. |
+| ❌ KILLED 2026-06-25 (amenity calendar, no music long-tail — BACKLOG) — **Battery ATL (Trumba)** | iCal/RSS/XML | `https://www.trumba.com/calendars/atlbrv.ics` | Free green-space shows at The Battery (Cobb). Verified live. |
+| ❌ KILLED 2026-07-17 (feed is a general university calendar, zero music; no Schwartz-specific feed exists — BACKLOG) — **Emory / Schwartz Center (Trumba)** | iCal/RSS/XML | `https://www.trumba.com/calendars/ec-events.ics` | Classical / jazz / world. Verified live. |
+| ⏳ FALL-GATED (dead in summer; revisit Aug+ — BACKLOG) — **KSU Bailey Performance Center (Localist)** | JSON API + iCal | `https://calendar.kennesaw.edu/api/2/events` | University recitals in Kennesaw (Cobb). Public read, no auth. Filter by music dept id. |
+| ⏳ FALL-GATED (dead in summer; revisit Aug+ — BACKLOG) — **GSU School of Music (Localist)** | JSON API + iCal | `https://calendar.gsu.edu/api/2/events?keyword=music` | 150+ events/yr. Per-event iCal export confirmed. |
+| ❌ KILLED 2026-06-25 (music a ~17% minority, no music category — BACKLOG) — **Georgia Tech Arts (Drupal RSS)** | RSS | `https://calendar.gatech.edu/taxonomy/term/12/feed` | Arts & Performance category feed confirmed. |
+| ❌ KILLED 2026-06-25 (amenity calendar; 1 music event in 30 — BACKLOG) — **Piedmont Park Conservancy** | iCal (The Events Calendar) | `webcal://piedmontpark.org/?post_type=tribe_events&ical=1&eventDisplay=list` | Park concerts/festivals. Verified live. |
+| ✅ WIRED 2026-05-25 — **Cobb Travel & Tourism** | iCal | `https://travelcobb.org/events/list/?shortcode=24f53d40&hide_subsequent_recurrences=1&ical=1` | County-wide curated: Glover Park, Kennesaw series, Mable House free shows. Verified live. |
+| ✅ WIRED 2026-06-25 — **Red Light Café (Squarespace)** | RSS | `http://redlightcafe.com/events?format=rss` | Indie venue; Squarespace native RSS. Confirmed live. |
 
 ### Generalizable feed patterns (reuse across sources)
 - **Trumba:** append `.ics` / `.rss` / `.json` to any Trumba calendar URL. (Battery + Emory confirmed; many institutions use it.)
@@ -82,7 +87,7 @@ Prefer not to build on these until Tier 1+2 are exhausted. Each carries its own 
 | Source | Why no feed | Risk |
 |---|---|---|
 | **DICE** (Eddie's Attic + indie) | Ticket-Holders API is partner-only GraphQL; **ToS prohibits scraping** | Higher — use a paid aggregator proxy or find the venue's Eventbrite/AXS presence instead |
-| **Smith's Olde Bar, The EARL** | Use Freshtix (no public API) | Medium — scrape venue page |
+| **Smith's Olde Bar** (still open), ~~The EARL~~ ✅ The EARL WIRED 2026-07-17 (Freshtix HTML parser, `src/feeds/freshtix.ts`) | Use Freshtix (no public API) | Medium — scrape venue page |
 | **Aisle 5** | SeeTickets US (partner-only API) | Medium — scrape `aisle5atl.com/calendar/` |
 | **Terminal West** | AXS-ticketed (no public API) | Medium |
 | **Venkman's** | BigTickets (no public API) | Medium |
