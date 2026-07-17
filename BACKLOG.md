@@ -259,9 +259,14 @@ clean. The two reachable issues are **FIXED & committed in `6baeb36`**: M1 (TM e
 path could echo the apikey to the chat surface → `redact()` + stderr-only body) and L1
 (`url` accepted any scheme → `safeUrl()` https/http allowlist in all three normalizers).
 Remaining recommendations, not auto-applied:
-- **M2 — supply chain.** Deps are caret-ranged; `npm audit` clean today. Use `npm ci`
-  (lockfile-exact) in any install/CI context, and consider pinning `@modelcontextprotocol/sdk`
-  to an exact version (it's the trust-critical dep that sees every tool arg).
+- **M2 — supply chain. CLOSED 2026-07-17.** `@modelcontextprotocol/sdk` pinned exact
+  (`1.29.0`, caret dropped — the trust-critical dep that sees every tool arg, matching the
+  brain-mcp pin convention). Re-probe at close found the filed "audit clean today" had aged:
+  1 high advisory in `hono` (transitive via the SDK — all five CVEs are server-deployment
+  surfaces: Windows path traversal, Lambda adapters, CORS middleware; none reachable in a
+  Mac-local stdio server, fixed anyway). `npm audit fix` bumped hono 4.12.22 → 4.12.30;
+  audit reports 0 vulnerabilities. `npm ci` (lockfile-exact) remains the standing rule for
+  any install/CI context.
 - **M3 — prompt injection via upstream concert data.** Event names / artists / feed
   summaries are attacker-influenceable free text flowing verbatim into the LLM context.
   **M3 cheap hardening SHIPPED 2026-06-25 (`646286e`)** — control-char strip + length cap

@@ -24,7 +24,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "fast-xml-parser": "5.9.3",
     "zod": "^4.4.3"
   },
