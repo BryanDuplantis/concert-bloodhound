@@ -68,10 +68,22 @@ async function main() {
   })) as ToolResult;
   console.log("\n[Red Light Café — feed-only venue]\n" + textOf(redlight));
 
+  // 4) A second feed-only venue, same failure class: The EARL sells via
+  //    Freshtix, outside TM's catalog. Confirmed miss 2026-07-09, closed
+  //    2026-07-17 (freshtix.ts). Locks the fix in as a regression guard —
+  //    without this leg nothing catches the source going quiet again.
+  const earl = (await client.callTool({
+    name: "search_by_venue",
+    arguments: { venue: "The Earl", city: "Atlanta", size: 5 },
+  })) as ToolResult;
+  console.log("\n[The EARL — feed-only venue]\n" + textOf(earl));
+
   await client.close();
 
   const redlightText = textOf(redlight);
   const staleVenue = pastDatesIn(redlight);
+  const earlText = textOf(earl);
+  const staleEarl = pastDatesIn(earl);
   // Atlanta is the metro with open feeds registered, so it's the leg that can
   // regress: an undated search there once returned nothing BUT past feed events.
   const staleAtlanta = pastDatesIn(atlanta);
@@ -80,8 +92,13 @@ async function main() {
     /no upcoming concerts are currently listed|couldn't find a venue/i.test(redlightText) ||
     !/Red Light/i.test(redlightText) ||
     staleVenue.length > 0;
+  const earlFailed =
+    !!earl.isError ||
+    /no upcoming concerts are currently listed|couldn't find a venue/i.test(earlText) ||
+    !/EARL/i.test(earlText) ||
+    staleEarl.length > 0;
 
-  if (failed(chicago) || failed(atlanta) || redlightFailed || staleAtlanta.length > 0) {
+  if (failed(chicago) || failed(atlanta) || redlightFailed || earlFailed || staleAtlanta.length > 0) {
     console.error("❌ MCP smoke failed: a tool call did not return live concerts.");
     if (staleAtlanta.length > 0) {
       console.error(`   search_concerts returned past-dated shows as upcoming: ${staleAtlanta.join(", ")}`);
@@ -91,11 +108,16 @@ async function main() {
     } else if (redlightFailed) {
       console.error("   search_by_venue returned no Red Light Café shows — the feed layer is not reaching it.");
     }
+    if (staleEarl.length > 0) {
+      console.error(`   search_by_venue returned past-dated EARL shows as upcoming: ${staleEarl.join(", ")}`);
+    } else if (earlFailed) {
+      console.error("   search_by_venue returned no EARL shows — the Freshtix feed is not reaching it.");
+    }
     process.exit(1);
   }
   console.error(
     "✅ MCP smoke passed: tools registered; city text + metro-geospatial searches returned live concerts, " +
-      "and search_by_venue surfaced a feed-only venue, all over stdio.",
+      "and search_by_venue surfaced two feed-only venues, all over stdio.",
   );
 }
 

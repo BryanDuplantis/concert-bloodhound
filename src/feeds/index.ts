@@ -13,6 +13,7 @@ import { safeUrl, sanitizeConcert } from "../types.js";
 import { fetchICalText, parseICal, parseLocation, type ICalEvent } from "./ical.js";
 import { sourcesForMetro, type FeedSource } from "./registry.js";
 import { fetchRedLightConcerts } from "./redlight.js";
+import { fetchFreshtixConcerts } from "./freshtix.js";
 
 interface CacheEntry {
   at: number;
@@ -78,10 +79,12 @@ export async function fetchMetroFeeds(
 
   const settled = await Promise.allSettled(
     sources.map(async (src) => {
-      // RSS sources own their full fetch→parse→normalize→sanitize pipeline
-      // (event date, denylist, genre-null all live in the venue module today —
-      // Red Light is the only one). iCal sources use the Cobb category-trust path.
+      // RSS/HTML sources own their full fetch→parse→normalize→sanitize
+      // pipeline (event date, denylist, genre-null all live in the venue
+      // module today — Red Light and The EARL are the only two). iCal
+      // sources use the Cobb category-trust path.
       if (src.type === "rss") return fetchRedLightConcerts(src, window);
+      if (src.type === "html") return fetchFreshtixConcerts(src, window);
       const events = await loadICal(src.url);
       return events
         .filter((e) => matchesMusic(e, src.musicCategories ?? []))

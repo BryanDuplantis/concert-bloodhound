@@ -6,7 +6,7 @@
  * Build-order spec + provenance: docs/atlanta-source-map.md.
  */
 
-export type FeedType = "ical" | "rss";
+export type FeedType = "ical" | "rss" | "html";
 
 export interface FeedSource {
   /** Stable id (logging, dedup of sources). */
@@ -43,6 +43,16 @@ export const FEED_SOURCES: FeedSource[] = [
     metro: "atlanta",
     type: "rss",
     url: "https://redlightcafe.com/events?format=rss",
+  },
+  {
+    // Single-venue indie/metal room selling via Freshtix, outside TM's
+    // catalog and JamBase's coverage. No RSS/iCal — server-rendered HTML
+    // list page, no year on its day headers. See freshtix.ts.
+    id: "earl-freshtix",
+    name: "The EARL (Freshtix)",
+    metro: "atlanta",
+    type: "html",
+    url: "https://badearl.freshtix.com/",
   },
 ];
 

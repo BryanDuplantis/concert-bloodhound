@@ -163,12 +163,29 @@ SUMMARY classifier, no canonical vocab.
     Rows are honestly labelled with their real billing; the summary says "matching".
 - `search_by_venue` — venue lookup → its upcoming events, from Ticketmaster **and**
   the metro's open feeds (2026-07-16). The feed leg is not optional: a feed-only
-  room (Red Light Café) has no TM venue id, so a TM miss or outage must not decide
-  the answer — it previously reported a confident "no upcoming concerts listed"
-  for a venue whose shows the feeds held. Feed events are matched to the query via
-  `venueMatches` (canonical fold + containment): the query is a human's typed name,
-  which is intent resolution, NOT the cross-source venue reconciliation
+  room (Red Light Café, The EARL) has no TM venue id, so a TM miss or outage must
+  not decide the answer — it previously reported a confident "no upcoming concerts
+  listed" for a venue whose shows the feeds held. Feed events are matched to the
+  query via `venueMatches` (canonical fold + containment): the query is a human's
+  typed name, which is intent resolution, NOT the cross-source venue reconciliation
   `mergeConcerts` deliberately refuses.
+  - **The EARL (Freshtix) source — shipped 2026-07-17** (`src/feeds/freshtix.ts`).
+    Closes the exact gap filed `2026-07-09` (task
+    `~/.second-brain-data/tasks/2026-07-09-bloodhound-earl-freshtix-feed.md`):
+    badearl.freshtix.com carries no RSS/iCal, only a server-rendered HTML list
+    page. Two things make this source different from Cobb/Red Light: (1) its day
+    headers carry **no year** ("Friday July 17th") — `assignYears` infers it by
+    walking the page in document order (already forward-chronological) and
+    bumping the year on any month decrease, anchoring the first group against
+    the fetch date so a December fetch whose list opens in January starts next
+    year, not this one; (2) `href`/title text is HTML-entity-escaped in the raw
+    markup (`&amp;`), so both must run through the same entity decoder — a URL
+    escaped in the title only would leak a literal `&amp;` into the ticket link
+    (caught live 2026-07-17, fixed same session). 403s a bare/urllib UA, 200s a
+    browser UA (PM-37 mechanism A). Throws (never returns `[]`) on a zero-day or
+    zero-event parse — the structural-drift alarm the Phase-3 pattern requires;
+    a genuine dark stretch at a working touring venue is implausible, so an
+    empty parse of a 200 means the markup moved, not "no shows."
 
 `search_concerts` and `search_by_artist` resolve a known metro (or an explicit
 `latlong`) to a geospatial `latlong`+`radius` search (default 30 mi) covering the
