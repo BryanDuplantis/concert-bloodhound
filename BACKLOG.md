@@ -397,16 +397,50 @@ resurfaces it's a NEW product question, not this item revived. Do not
 re-propose the pivot from the source map's framing; the map is provenance
 for feed candidates only.
 
-**Successor work item — Tier-2 static civic sources (NOT STARTED):**
-Glover Park (mariettaga.gov, 6 free shows/yr May–Sep), Kennesaw Depot Park
-(kennesaw-ga.gov, 4/yr), Smyrna Village Green (smyrnaga.gov — 403s on direct
-fetch; control-test bare vs browser UA per PM-56 before reaching for
-curl_cffi). Recon each page live BEFORE building (the Phase-2/3 lesson):
-verify the current season's dates are actually published as parseable HTML
-and majority-music. ~10 events/yr total — small win, so keep the build
-proportional; a source that resists a simple parser gets killed, not
-engineered around. Follow the Freshtix pattern: throw-on-empty-parse
-structural-drift alarm, `genre: null`, never invent dates.
+**Successor work item — Tier-2 static civic sources — ✅ SHIPPED 2026-07-17
+(2 of 3; Smyrna KILLED).** Recon-first per the item's own rule; verdicts:
+
+- **Glover Park — WIRED** (`src/feeds/glover.ts`, registry `glover-park`,
+  `type: "html"`). The season is one CivicEngage lineup table at
+  `mariettaga.gov/192/Glover-Park-Concert-Series` (the map's URL, correct),
+  6 dated 2026 rows Apr–Sep, 100% music, bare UA fetches fine. Rows anchor on
+  the stable `data-th` cell attributes. Two live traps handled: hidden
+  accessibility spans ("Facebook Social Network", `display:none` /
+  `ae-compliance-indent`) that a naive tag-strip leaks into the artist name,
+  and page-style month abbreviations incl. "Sept". Show time is the page's own
+  blanket prose ("All concerts are free and begin at 8 p.m.") — parsed per
+  fetch, never hardcoded; if the sentence goes, time reverts to null. The
+  "Performers / Genre" label text rides as `description`; `genre` stays null.
+- **Kennesaw — WIRED via WP REST, not the filed HTML route**
+  (`src/feeds/kennesaw.ts`, registry `kennesaw-news`, `type: "wp-json"`). The
+  city's `/concert-series/` page is client-rendered ("Loading…") — unparseable
+  static HTML, which would have been a kill — but the WordPress REST API is
+  open (`wp-json/wp/v2/posts?search=concert%20series`), and season
+  announcements use one house format per act: `<p>Month D – Artist<br/>
+  blurb</p>`. Bonus over the filed item: TWO series parse, not one — First
+  Friday (Downtown Kennesaw, 6/yr) AND the Depot Park amphitheater series
+  (4/yr), routed by post title; a series post matching neither venue signal is
+  skipped, never guessed. Season year = the title's own 4-digit year, else
+  publish year; prior seasons' posts parse and fall out of the window
+  naturally. City's per-act blurb rides as `description`.
+- **Smyrna — KILLED 2026-07-17.** PM-56 control-test run as prescribed:
+  `smyrnaga.gov` 403s a bare curl UA AND a browser UA (both live 2026-07-17)
+  — a TLS/JA3-or-WAF block, not a UA allowlist, so no honest Node-fetch path
+  exists. Engineering around it (curl_cffi impersonation) is exactly what
+  this item forbade. Falsifier for revisiting: if a plain
+  `curl -sI https://www.smyrnaga.gov/` ever returns 200, the block changed —
+  re-recon then. Partial mitigation already live: Cobb Travel's iCal carries
+  some Smyrna Village Green events when the county categorizes them as music.
+
+Both fetchers follow the Freshtix pattern verbatim: throw-on-empty-parse
+structural-drift alarm, `genre: null`, never invent dates/times. Feed dispatch
+in `feeds/index.ts` moved from type-keyed to a per-source `BESPOKE_FETCHERS`
+table (two `"html"` sources need different parsers; `type` now describes
+transport only). Verified: 16 new offline tests (109 total green);
+`smoke:feeds` live = Glover 6 + Kennesaw 10 events; behavioral pass shows all
+8 upcoming civic shows (Seven Bridges 7/31 Glover, Rumours ATL 8/22 Depot,
+Groove Daddies 10/2 downtown, etc.) with `venueMatches` resolving typed
+"Depot Park" / "Glover Park" queries.
 
 ---
 

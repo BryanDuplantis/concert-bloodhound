@@ -74,9 +74,9 @@ the dead ends — is downstream of that.
 
 No machine feed, but only a handful of dates/year — cheap to parse or hand-enter.
 
-- **Marietta / Glover Park Concert Series** — `mariettaga.gov/192/Glover-Park-Concert-Series` — 6 free Friday concerts May–Sep (40th-anniversary season). HTML + GovDelivery.
-- **Kennesaw Depot Park Series** — `kennesaw-ga.gov` — 4 free outdoor concerts Mar–Sep at United Bankshares Amphitheater. News-release HTML only.
-- **Smyrna Village Green / Blanket Concert Series** — `smyrnaga.gov` (CivicPlus CMS; 403 on direct fetch). Free; manual/scrape.
+- ✅ WIRED 2026-07-17 (`src/feeds/glover.ts`) — **Marietta / Glover Park Concert Series** — `mariettaga.gov/192/Glover-Park-Concert-Series` — 6 free Friday concerts Apr–Sep. One CivicEngage lineup table, rows anchored on `data-th` attributes; season show time read from page prose.
+- ✅ WIRED 2026-07-17 (`src/feeds/kennesaw.ts`, via open WP REST API — the `/concert-series/` page itself is client-rendered/unparseable) — **Kennesaw Depot Park Series** — `kennesaw-ga.gov` — PLUS the First Friday downtown series the original row missed; both parse from news posts' house `Month D – Artist<br/>blurb` format, venue routed by post title.
+- ❌ KILLED 2026-07-17 (PM-56 control-test: 403 on bare AND browser UA = TLS/JA3-or-WAF block, no honest Node-fetch path; falsifier = a plain `curl -sI` returning 200 — BACKLOG) — **Smyrna Village Green / Blanket Concert Series** — `smyrnaga.gov` (CivicPlus CMS). Cobb Travel iCal partially covers Village Green events it categorizes as music.
 
 ---
 

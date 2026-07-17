@@ -86,6 +86,19 @@ SUMMARY classifier, no canonical vocab.
 - `src/feeds/` — federated open-feed layer (`ical.ts` parser, `registry.ts` metro→
   source map, `index.ts` fetch/cache/normalize). Closes the long-tail (free civic/
   indie shows) TM misses, on demand, without leaving the stateless model.
+  Non-iCal sources dispatch through the `BESPOKE_FETCHERS` table in `index.ts`,
+  keyed by source **id**, not FeedType — two `"html"` sources already need
+  different parsers, so `type` describes transport while the table names the
+  code. Bespoke modules: `redlight.ts`, `freshtix.ts`, `glover.ts` (Marietta
+  civic; CivicEngage season table, season time read from page prose, hidden
+  a11y spans stripped before the tag-strip), `kennesaw.ts` (city WP REST API —
+  the city's own calendar page is client-rendered; parses BOTH series from news
+  posts' `Month D – Artist<br/>blurb` format, venue routed by post title,
+  season year from the title with publish-year fallback, posts matching
+  neither venue signal skipped, never guessed). All follow the Freshtix
+  pattern: throw-on-empty structural-drift alarm, `genre: null`, never invent
+  dates/times. Smyrna (`smyrnaga.gov`) is KILLED — 403s bare AND browser UA
+  (PM-56 control-test 2026-07-17), no honest Node-fetch path.
 - **Network invariant:** I/O is isolated to the source clients — `ticketmaster.ts`,
   `jambase.ts`, and `feeds/*`. No other module fetches — `geo.ts`, `merge.ts`,
   `format.ts`, `types.ts` are all pure.
