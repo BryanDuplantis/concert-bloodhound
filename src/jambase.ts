@@ -111,9 +111,10 @@ export interface JamBaseSearchParams {
   /**
    * Server-side artist filter (verified live 2026-07-16 against the unknown-parameter
    * oracle: JamBase 400s on any param it doesn't know, and accepts this one).
-   * Server-side is the point — the genre filter below is client-side and therefore
-   * sees only page 1, which is tolerable for a browse but would make a targeted
-   * artist lookup miss anyone past the first 40 events.
+   * Server-side is the point — a client-side filter sees only the fetched pages,
+   * which would make a targeted artist lookup miss anyone past the first 40
+   * events. (The genre filter gained its own server-side leg, `genreSlug`, on
+   * 2026-07-17 — see JAMBASE_GENRES.)
    *
    * It matches ANY performer in the lineup, not just the headliner — which is a
    * feature: it surfaces "Grand Ole Opry" nights where the artist is one of several
@@ -133,6 +134,67 @@ function genreTokens(s: string): Set<string> {
 }
 
 /**
+ * JamBase's server-side genre vocabulary — the CLOSED set `GET /v3/genres`
+ * returns (20 entries, fetched live 2026-07-17). `genreSlug` on /events is
+ * server-side (verified against the unknown-parameter oracle, same probe
+ * discipline as artistName: baseline Atlanta total=1128, genreSlug=jazz
+ * total=41 — the server filtered, not page 1) and validates its VALUE too: an
+ * unknown slug is a loud 400 ("could not be found"), never a silent empty set.
+ * So vocabulary drift fails loud here, and a resolver miss simply withholds the
+ * param (falling back to the client-side-only path). Display names matter:
+ * "R&B / Soul" is what lets an "R&B" request reach "rhythm-and-blues-soul".
+ */
+const JAMBASE_GENRES: ReadonlyArray<{ identifier: string; name: string }> = [
+  { identifier: "bluegrass", name: "Bluegrass" },
+  { identifier: "blues", name: "Blues" },
+  { identifier: "christian", name: "Christian" },
+  { identifier: "classical", name: "Classical" },
+  { identifier: "country-music", name: "Country Music" },
+  { identifier: "edm", name: "EDM" },
+  { identifier: "folk", name: "Folk" },
+  { identifier: "hip-hop-rap", name: "Hip Hop & Rap" },
+  { identifier: "indie", name: "Indie" },
+  { identifier: "jamband", name: "Jamband" },
+  { identifier: "jazz", name: "Jazz" },
+  { identifier: "kpop", name: "K-pop" },
+  { identifier: "latin", name: "Latin" },
+  { identifier: "metal", name: "Metal" },
+  { identifier: "pop", name: "Pop" },
+  { identifier: "punk", name: "Punk" },
+  { identifier: "rhythm-and-blues-soul", name: "R&B / Soul" },
+  { identifier: "reggae", name: "Reggae" },
+  { identifier: "rock", name: "Rock" },
+  { identifier: "tribute", name: "Tribute" },
+];
+
+/**
+ * Resolve a user's genre request to a JamBase genreSlug, or null when no single
+ * vocabulary entry fits (null = don't send the param; the client-side filter
+ * still runs either way). Exact token-set equality against identifier or
+ * display name wins first ("blues" means Blues, never R&B/Soul despite being a
+ * token subset of it); otherwise a subset match must be UNIQUE — an ambiguous
+ * request resolves to nothing rather than to a guess. Same token semantics as
+ * matchedGenreSlug, deliberately: what would match an event's tags is what
+ * resolves against the vocabulary.
+ */
+export function resolveGenreSlug(genre: string): string | null {
+  const want = genreTokens(genre);
+  if (want.size === 0) return null;
+  const equals = (a: Set<string>, b: Set<string>) =>
+    a.size === b.size && [...a].every((t) => b.has(t));
+  for (const g of JAMBASE_GENRES) {
+    if (equals(want, genreTokens(g.identifier)) || equals(want, genreTokens(g.name))) {
+      return g.identifier;
+    }
+  }
+  const hits = JAMBASE_GENRES.filter((g) => {
+    const have = new Set([...genreTokens(g.identifier), ...genreTokens(g.name)]);
+    return [...want].every((t) => have.has(t));
+  });
+  return hits.length === 1 ? hits[0]!.identifier : null;
+}
+
+/**
  * The TOP-BILLED act's first genre tag that matches the request, or null. JamBase
  * tags genre per performer as hyphenated slugs ("hip-hop-rap",
  * "rhythm-and-blues-soul"), often several per act. A slug matches when every
@@ -141,8 +203,11 @@ function genreTokens(s: string): Set<string> {
  * tags (the genre we display) and never guess: an act with no tags never matches,
  * so under a genre filter it's omitted rather than mislabeled. Returning the
  * matched slug lets the caller display the tag that actually matched the search
- * (the headliner's *first* tag is often a different genre). Known gaps: taxonomy
- * mismatches (a "R&B" request won't reach "rhythm-and-blues-soul"), page-1 only.
+ * (the headliner's *first* tag is often a different genre). The taxonomy gap
+ * this can't bridge alone (an "R&B" request's tokens never reach
+ * "rhythm-and-blues-soul") is closed one level up: searchEvents resolves the
+ * request against JAMBASE_GENRES and accepts the resolved slug as a second
+ * match path.
  */
 export function matchedGenreSlug(e: any, genre: string): string | null {
   const want = genreTokens(genre);
@@ -264,10 +329,15 @@ export function normalizeJamBaseEvent(e: any): Concert {
 }
 
 /**
- * Search a metro's upcoming music events on JamBase v3. Returns one page (40
- * events, date-ascending) — plenty to augment Ticketmaster; page through via
- * `page` if a wider window is ever needed. Bounded by [eventDateFrom,
- * eventDateTo] when supplied; otherwise JamBase defaults to the upcoming window.
+ * Search a metro's upcoming music events on JamBase v3, date-ascending. Bounded
+ * by [eventDateFrom, eventDateTo] when supplied; otherwise JamBase defaults to
+ * the upcoming window. Without a genre filter this is one page (40 events) —
+ * plenty to augment Ticketmaster. Under a genre filter the request goes
+ * server-side via `genreSlug` (when the genre resolves against the vocabulary),
+ * so page 1 is 40 GENRE events rather than the genre-tagged slice of the metro's
+ * first 40, and a couple more pages are fetched when the filtered set runs past
+ * one — server-filtered totals are small, so this closes the browse rather than
+ * sampling it.
  */
 export async function searchEvents(p: JamBaseSearchParams): Promise<Concert[]> {
   // Fail loudly rather than paging the entire catalog: an events query with no
@@ -276,25 +346,56 @@ export async function searchEvents(p: JamBaseSearchParams): Promise<Concert[]> {
   if (!p.geoMetroId && !p.artistName) {
     throw new JamBaseError("A JamBase event search needs a geoMetroId, an artistName, or both.");
   }
-  const data = await jbGet("events", {
+  const resolvedSlug = p.genre ? resolveGenreSlug(p.genre) : null;
+  const query = {
     geoMetroId: p.geoMetroId,
     artistName: p.artistName,
     eventDateFrom: p.eventDateFrom,
     eventDateTo: p.eventDateTo,
-    page: p.page,
-  });
-  const events = extractEvents(data);
+    genreSlug: resolvedSlug ?? undefined,
+  };
+  const first = await jbGet("events", { ...query, page: p.page });
+  let events = extractEvents(first);
+  if (resolvedSlug && p.page === undefined) {
+    // Page through the server-FILTERED set only (never the raw catalog), capped.
+    // A failed extra page keeps what's already fetched: page 1 alone equals the
+    // pre-genreSlug behavior, and the result never claims completeness.
+    const MAX_GENRE_PAGES = 3;
+    const totalPages = Number(first?.pagination?.totalPages) || 1;
+    for (let pg = 2; pg <= Math.min(totalPages, MAX_GENRE_PAGES); pg++) {
+      try {
+        events = events.concat(extractEvents(await jbGet("events", { ...query, page: pg })));
+      } catch {
+        break;
+      }
+    }
+  }
   // Sanitize at the source boundary, AFTER the genre relabel below — so the
   // overridden genre is hardened too, not just the normalizer's fields.
   if (p.genre) {
     const want = p.genre;
-    // Keep only events whose headliner is tagged with the requested genre, and
-    // relabel each with the tag that MATCHED — so a "rock" search doesn't show a
-    // result as "Metal"/"Folk" just because that's the headliner's first tag.
+    // Keep only events whose HEADLINER carries the requested genre, and relabel
+    // each with the tag that MATCHED — so a "rock" search doesn't show a result
+    // as "Metal"/"Folk" just because that's the headliner's first tag. The
+    // headliner-only rule survives genreSlug on purpose: the server param
+    // matches ANY performer in the lineup (verified live 2026-07-17 — 6 of 40
+    // jazz rows matched via an opener only), and labeling a show by an opener's
+    // genre is the inventing this product refuses. The resolved slug is a
+    // second way to match (an "R&B" request's tokens never reach
+    // "rhythm-and-blues-soul" directly); the token path stays first so the
+    // relabel prefers the tag closest to the user's own words.
     return events.flatMap((e) => {
-      const slug = matchedGenreSlug(e, want);
+      const slug =
+        matchedGenreSlug(e, want) ??
+        (resolvedSlug && headlinerCarriesSlug(e, resolvedSlug) ? resolvedSlug : null);
       return slug ? [sanitizeConcert({ ...normalizeJamBaseEvent(e), genre: prettyGenre(slug) })] : [];
     });
   }
   return events.map(normalizeJamBaseEvent).map(sanitizeConcert);
+}
+
+/** Whether the top-billed act's own tags include the slug (exact, no tokens). */
+export function headlinerCarriesSlug(e: any, slug: string): boolean {
+  const slugs: unknown = e?.performer?.[0]?.genre;
+  return Array.isArray(slugs) && slugs.map(String).includes(slug);
 }

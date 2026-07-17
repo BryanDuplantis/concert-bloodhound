@@ -43,8 +43,18 @@ reels it back; see `merge.ts`). It was far worse than "a late-night show": EDT i
 so on the window's last local day every show from 20:00 on was dropped server-side —
 a single-day Eddie's Attic query returned 1 of 3 shows. Residual: the mirror case at a
 positive-offset venue (UTC+14 via explicit latlong) is unfixed and has no live specimen.
-(3) Genre-aware JamBase only scans page-1 events and won't bridge
-taxonomy gaps (a "R&B" request misses "rhythm-and-blues-soul"). **Lesson logged:**
+(3) Genre-aware JamBase page-1 limit + taxonomy gap — **FIXED 2026-07-17 via
+server-side `genreSlug`.** Same unknown-param-oracle probe that found `artistName`:
+`genreSlug` filters server-side (Atlanta baseline 1128 → jazz 41), validates its value
+loudly (unknown slug = 400, never a silent empty), and the vocabulary is a CLOSED set of
+20 (`GET /v3/genres`, static `JAMBASE_GENRES` table). `resolveGenreSlug` maps the request
+to a slug — exact vocab hit first ("blues" is Blues, never R&B/Soul), else UNIQUE subset
+match over identifier+display-name tokens (display names are the bridge: "R&B" reaches
+"rhythm-and-blues-soul" through "R&B / Soul"); ambiguous or unknown → null → param
+withheld, old client-side path unchanged. Server matches ANY performer in the lineup
+(6/40 jazz rows matched via an opener only), so the headliner-only client filter stays —
+now over the server-FILTERED set, paged to 3 pages max. Live: "R&B" Atlanta = 86 concerts
+(structurally 0 before). **Lesson logged:**
 read the vendor's current API docs BEFORE theorizing about why auth fails.
 ---
 

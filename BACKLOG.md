@@ -15,9 +15,10 @@ last regardless of date.
 
 - **Uses JamBase's server-side `artistName` param, NOT a client-side filter.** Found by probing
   the live API against its own unknown-parameter oracle (JamBase 400s on any param it doesn't
-  know; control-tested with a garbage name first — cf. PM-10). Server-side is load-bearing: the
-  genre filter is client-side and therefore sees only page 1, which is tolerable for a browse
-  but would make a targeted artist lookup silently miss anyone past the first 40 events.
+  know; control-tested with a garbage name first — cf. PM-10). Server-side is load-bearing: a
+  client-side filter sees only the fetched pages, which would make a targeted artist lookup
+  silently miss anyone past the first 40 events. (The genre filter gained its own server-side
+  leg, `genreSlug`, on 2026-07-17 — see the JamBase section below.)
   `artistName` also matches ANY performer in the lineup, which surfaces "Grand Ole Opry" nights
   where the artist is one of several billed acts.
 - **Scoping rule:** JamBase fires scoped to a mapped metro, or nationwide when no place is
@@ -434,8 +435,22 @@ Attic" endDate: "2026-07-25"` returns BOTH 18:00 and 20:00, with 0 rows outside 
 **Latent residual — the mirror bug, unfixed:** a positive-offset venue (UTC+14, reachable
 only via explicit `latlong`/`countryCode`, not the US-only metro table) can have an early
 show on the START date fall before the unpadded start bound. No live specimen; the metro
-table can't reach one. (3) **Genre-aware JamBase** scans page-1 only and won't bridge
-taxonomy gaps (a "R&B" request misses "rhythm-and-blues-soul").
+table can't reach one. (3) **Genre-aware JamBase page-1 limit + taxonomy gap — ✅ FIXED 2026-07-17 via server-side
+`genreSlug`** (found with the same unknown-param-oracle probe as `artistName`). The param
+filters server-side (Atlanta baseline 1128 total → jazz 41), single-value only (comma lists
+400), and validates its VALUE loudly — an unknown slug is a 400 "could not be found", never a
+silent empty set, so vocabulary drift fails loud. The vocabulary is a CLOSED set of 20
+(`GET /v3/genres`, mirrored as the static `JAMBASE_GENRES` table in `jambase.ts`);
+`resolveGenreSlug` maps a request to a slug — exact vocab match first ("blues" is Blues, never
+R&B/Soul despite being a token subset of it), else a UNIQUE subset match over identifier +
+display-name tokens ("R&B" reaches "rhythm-and-blues-soul" through the display name
+"R&B / Soul"); ambiguous/unknown → null → param withheld and the pre-existing client-side path
+runs unchanged (honest fallback, e.g. "zydeco" → 0 rows, no crash). `genreSlug` matches ANY
+performer in the lineup (verified live: 6/40 jazz rows matched via an opener only), so the
+headliner-only client filter is kept — the never-borrow-an-opener's-genre rule — now running
+over the server-FILTERED set, paged up to 3 pages (server-filtered totals are small; a failed
+extra page keeps what's fetched). Live proof: "R&B" Atlanta → 86 concerts, all labeled from the
+headliner's own tag; before, that query was structurally 0.
 
 **✅ THE WORKING RECIPE (verified 2026-05-25 with the rotated `…BwF2` key):**
 - **Origin:** `https://api.data.jambase.com/v3`  (NOT `www.jambase.com/jb-api/v3`)

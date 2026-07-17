@@ -7,7 +7,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeJamBaseEvent, headlinerMatchesGenre } from "./jambase.js";
+import {
+  normalizeJamBaseEvent,
+  headlinerMatchesGenre,
+  resolveGenreSlug,
+  headlinerCarriesSlug,
+} from "./jambase.js";
 
 // Free festival: date-only startDate, empty offers, top performer has no genre.
 const festival = {
@@ -94,4 +99,32 @@ test("headlinerMatchesGenre: token-subset match on the headliner's tags only", (
   assert.equal(headlinerMatchesGenre(festival, "jazz"), false); // top act (Buddy Red) has no genre → never guess
   assert.equal(headlinerMatchesGenre({ performer: [{ genre: ["trap"] }] }, "rap"), false); // "rap" ⊄ "trap"
   assert.equal(headlinerMatchesGenre(concert, ""), true); // empty request → no constraint
+});
+
+test("resolveGenreSlug: exact vocabulary hit wins before subset — 'blues' is Blues, never R&B/Soul", () => {
+  assert.equal(resolveGenreSlug("blues"), "blues");
+  assert.equal(resolveGenreSlug("Jazz"), "jazz");
+  assert.equal(resolveGenreSlug("EDM"), "edm");
+});
+
+test("resolveGenreSlug: display-name tokens bridge the taxonomy gap — 'R&B' reaches rhythm-and-blues-soul", () => {
+  assert.equal(resolveGenreSlug("R&B"), "rhythm-and-blues-soul");
+  assert.equal(resolveGenreSlug("soul"), "rhythm-and-blues-soul");
+  assert.equal(resolveGenreSlug("rap"), "hip-hop-rap");
+  assert.equal(resolveGenreSlug("hip hop"), "hip-hop-rap");
+  assert.equal(resolveGenreSlug("country"), "country-music");
+});
+
+test("resolveGenreSlug: no unique fit → null (withhold the param, fall back to client-side)", () => {
+  assert.equal(resolveGenreSlug("zydeco"), null); // not in the vocabulary
+  assert.equal(resolveGenreSlug("indie rock"), null); // spans two entries, no single fit
+  assert.equal(resolveGenreSlug(""), null);
+  assert.equal(resolveGenreSlug("  /  "), null); // no tokens at all
+});
+
+test("headlinerCarriesSlug: exact slug on the top-billed act only — never an opener's", () => {
+  assert.equal(headlinerCarriesSlug(concert, "hip-hop-rap"), true);
+  assert.equal(headlinerCarriesSlug(concert, "rap"), false); // exact match, not tokens
+  assert.equal(headlinerCarriesSlug(festival, "jazz"), false); // opener has jazz; headliner has none
+  assert.equal(headlinerCarriesSlug({}, "jazz"), false);
 });
