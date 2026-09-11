@@ -15,6 +15,30 @@ import { createConsentHandlers } from "./auth/consent.js";
 import { createRegisterRateLimit } from "./auth/rate-limit.js";
 import { requestLog, type LoggedRequest } from "./middleware/request-log.js";
 
+/**
+ * Trust X-Forwarded-For from loopback peers only, so the SDK's express-rate-limit
+ * limiters on /authorize, /token and /register key per client instead of one
+ * shared 127.0.0.1 bucket.
+ *
+ * The invariant this rests on: the only loopback peer is an HTTP reverse proxy
+ * that writes the rightmost X-Forwarded-For hop itself. Under "loopback",
+ * req.ip is the rightmost untrusted hop, so a client-forged value to its left
+ * is ignored whether the proxy appends or replaces. Today that proxy is
+ * tailscaled's serve/Funnel HTTP handler on the 127.0.0.1 bind (it replaces
+ * the header outright: serve.go addProxyForwardedHeaders, v1.102.2).
+ *
+ * A raw TCP mount (`tailscale funnel --tcp` or `--tls-terminated-tcp`) breaks
+ * the invariant: the peer stays 127.0.0.1 but the client's own header passes
+ * through untouched, so a fresh forged value per request is a fresh bucket and
+ * these limiters stop limiting. Re-derive this before any such mount change.
+ *
+ * Accepted residual: any process on the Pi can connect to 127.0.0.1 directly
+ * and forge the header the same way. A local process already owns the box.
+ *
+ * Never `true`: that trusts the leftmost, client-forgeable hop.
+ */
+export const TRUST_PROXY = "loopback";
+
 function parseAllowedOrigins(raw: string): Set<string> {
   return new Set(
     raw
@@ -149,6 +173,7 @@ export async function runHttp(): Promise<void> {
     );
   }
   const app = express();
+  app.set("trust proxy", TRUST_PROXY);
 
   // Request-id mint + non-2xx logging hook — FIRST, before the body parsers,
   // so parser 400/413 rejections carry a request id and log.

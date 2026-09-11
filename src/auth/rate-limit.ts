@@ -11,12 +11,13 @@ import type { LoggedRequest } from "../middleware/request-log.js";
  * repeatedly mint clients using the allowlisted redirect_uri, growing the
  * persistent clients.json store unbounded — a slow disk/write-chain DoS.
  *
- * GLOBAL, not per-IP: this is a single-user service behind the Tailscale
- * Funnel, which collapses source IPs to loopback. Per-IP keying would require
- * trusting X-Forwarded-For, which is spoofable if the hop count is wrong. A
- * global cap needs no IP trust, cannot be spoofed, and directly bounds
- * clients.json growth. Legitimate `/register` happens only on a rare connector
- * re-link, so a global window does not impede real use.
+ * GLOBAL, not per-IP, even though req.ip is now the real client (http.ts
+ * TRUST_PROXY): the thing being bounded is TOTAL clients.json growth, which a
+ * per-IP cap cannot bound against a client with many source addresses. It
+ * needs no IP trust and cannot be spoofed. It records every request it admits,
+ * including ones the SDK handler then rejects, so junk POSTs spend the window
+ * too. Legitimate `/register` happens only on a rare connector re-link, so a
+ * global window does not impede real use.
  */
 
 const REGISTER_WINDOW_MS = 15 * 60_000; // 15 min

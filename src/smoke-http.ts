@@ -16,6 +16,10 @@
  *      the static Bearer secret AND under the OAuth access token; tools/call
  *      (search_concerts Atlanta) asserting structuredContent is present when
  *      TICKETMASTER_API_KEY is available (skipped, loudly, when not).
+ *   8. (runs right after /health) Proxy trust on the REAL app: two forwarded
+ *      clients get independent SDK /token rate-limit buckets, and the child
+ *      logs no ERR_ERL_ warning. Unit tests build their own app, so only this
+ *      step fails if runHttp stops applying TRUST_PROXY.
  *
  * Exit non-zero on any failure. Run: npm run build && npm run smoke:http
  * (pass API keys via --env-file=.env for the tools/call leg).
@@ -115,7 +119,11 @@ async function main(): Promise<void> {
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
-  child.stderr?.on("data", (d: Buffer) => process.stderr.write(`  [child] ${d}`));
+  let childStderr = "";
+  child.stderr?.on("data", (d: Buffer) => {
+    childStderr += d.toString();
+    process.stderr.write(`  [child] ${d}`);
+  });
 
   try {
     await waitForHealth(10_000);
@@ -123,6 +131,26 @@ async function main(): Promise<void> {
     // 1. /health
     const health = (await (await fetch(`${PUB}/health`)).json()) as { service?: string };
     check("health names the service", health.service === "concert-bloodhound");
+
+    // 8 (runs here, not last). express-rate-limit validates only a limiter's
+    // FIRST request, so these must be the first /token hits for the ERR_ERL
+    // check at the end to be able to fail. Without trust, all three calls
+    // share the 127.0.0.1 bucket and B lands at A2 - 1.
+    const tokenRemaining = async (xff: string): Promise<number | null> => {
+      const r = await fetch(`${PUB}/token`, { method: "POST", headers: { "X-Forwarded-For": xff } });
+      await r.arrayBuffer();
+      const v = r.headers.get("ratelimit-remaining");
+      return v === null ? null : Number(v);
+    };
+    const a1 = await tokenRemaining("198.51.100.1");
+    const a2 = await tokenRemaining("198.51.100.1");
+    const b1 = await tokenRemaining("198.51.100.2");
+    check("SDK /token limiter ran (RateLimit-Remaining present)", a1 !== null && a2 !== null && b1 !== null);
+    check(
+      "same forwarded client shares a bucket, a different one gets a fresh bucket",
+      a1 !== null && a2 === a1 - 1 && b1 === a1,
+      `a1=${a1} a2=${a2} b1=${b1}`,
+    );
 
     // 2. Unauthenticated /mcp → 401 with RFC 9728 discovery pointer
     const unauth = await fetch(`${PUB}/mcp`, {
@@ -290,6 +318,12 @@ async function main(): Promise<void> {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
     });
     check("garbage bearer token is 401", badTok.status === 401, String(badTok.status));
+
+    check(
+      "no ERR_ERL_ warning from the real app",
+      !childStderr.includes("ERR_ERL_"),
+      childStderr.match(/ERR_ERL_\w+/)?.[0],
+    );
   } finally {
     child.kill("SIGTERM");
     fs.rmSync(stateDir, { recursive: true, force: true });
