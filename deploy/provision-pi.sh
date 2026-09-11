@@ -10,8 +10,11 @@
 #   2. Write .env.local: MCP_SECRET + OAUTH_AUTHORIZE_PASSWORD minted via
 #      openssl on the Pi; OAUTH_ALLOWED_REDIRECT_URIS copied server-side from
 #      brain-mcp's live .env.local (same claude.ai callback); PUBLIC_BASE_URL
-#      pinned to the Funnel :10000 origin; chmod 600 (explicit — redirect
-#      rewrites drop modes).
+#      pinned to the /bloodhound path on the shared 443 Funnel (the app
+#      derives its routes + OAuth metadata from that path; a bare origin mounts
+#      them at root, which the Funnel sends to brain-mcp). The Funnel mounts
+#      themselves are configured out-of-band, NOT by this script; chmod 600
+#      (explicit — redirect rewrites drop modes).
 #   3. Append TICKETMASTER_API_KEY + JAMBASE_API_KEY piped from the Mac .env.
 #   4. Pre-create the OAuth state dir mode 700.
 #   5. Install + enable the systemd unit (does not start — first start comes
@@ -50,7 +53,7 @@ REDIRECTS="$(sed -n 's/^OAUTH_ALLOWED_REDIRECT_URIS=//p' "$HOME/brain-mcp/.env.l
 umask 077
 {
     echo "MCP_PORT=3003"
-    echo "PUBLIC_BASE_URL=https://raspberrypi.tail5a9795.ts.net:10000"
+    echo "PUBLIC_BASE_URL=https://raspberrypi.tail5a9795.ts.net/bloodhound"
     echo "MCP_SECRET=$(openssl rand -hex 32)"
     echo "OAUTH_AUTHORIZE_PASSWORD=$(openssl rand -hex 16)"
     echo "OAUTH_ALLOWED_REDIRECT_URIS=$REDIRECTS"
