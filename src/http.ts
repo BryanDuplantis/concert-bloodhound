@@ -273,7 +273,12 @@ export async function runHttp(): Promise<void> {
   });
 
   const port = parseInt(process.env.MCP_PORT ?? "3003", 10) || 3003;
-  app.listen(port, () => {
-    console.log(`[concert-bloodhound] HTTP server listening on port ${port} (Bearer + OAuth)`);
+  // Loopback only: the one ingress is Tailscale Funnel, and every proxy mount must
+  // target 127.0.0.1:$MCP_PORT. The IPv4 literal, not "localhost", which Node can
+  // resolve to ::1 where a 127.0.0.1 target would not reach. Not env-configurable on
+  // purpose, so no setting can quietly re-expose it on the LAN or tailnet.
+  // Gate: cross-surface/pi-host-firewall constraint 12.
+  app.listen(port, "127.0.0.1", () => {
+    console.log(`[concert-bloodhound] HTTP server listening on 127.0.0.1:${port} (Bearer + OAuth)`);
   });
 }

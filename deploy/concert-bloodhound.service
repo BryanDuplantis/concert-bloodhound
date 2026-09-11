@@ -1,6 +1,7 @@
 # concert-bloodhound — remote MCP server (HTTP transport, OAuth-gated).
 # SYSTEM unit, mirrors brain-mcp.service minus the docker dependency (no
-# ChromaDB here). Funnel :10000 → 127.0.0.1:3003 fronts it publicly.
+# ChromaDB here). Funnel 443 /bloodhound → http://127.0.0.1:3003/bloodhound
+# fronts it publicly; the server binds 127.0.0.1 only, so that is its sole ingress.
 #
 # Install (from ~/concert-bloodhound on the Pi):
 #   sudo cp deploy/concert-bloodhound.service /etc/systemd/system/

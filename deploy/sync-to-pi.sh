@@ -93,6 +93,16 @@ rm -f /tmp/cb_init.json
 [ "$code" = 200 ] && [ "$ok" = 1 ] || { echo "[pi] initialize POST FAILED (HTTP $code, serverInfo=$ok)" >&2; exit 1; }
 echo "[pi] initialize: 200 + serverInfo"
 
+# Proof 1b — the bind is IPv4 loopback ONLY (gate cross-surface/pi-host-firewall
+# constraint 12). Asserted from the kernel's listener table, not the code: a
+# regressed wildcard bind still answers the 127.0.0.1 probes above, so only ss
+# can see it. Runs after Proof 1 so a listener is known to exist; an empty set
+# still fails, so "no wildcard found" can never pass on "nothing found".
+listeners="$(ss -Hltn "sport = :${PORT}" | awk '{print $4}' | sort -u | tr '\n' ' ')"
+listeners="${listeners% }"
+[ "$listeners" = "127.0.0.1:${PORT}" ] || { echo "[pi] bind NOT loopback-only on :${PORT}: '${listeners}'" >&2; exit 1; }
+echo "[pi] bind: 127.0.0.1:${PORT} only"
+
 # Proof 2 — tools/call with structuredContent (the gate's done-bar: a bare
 # initialize 200 proves transport+auth, not that tool output survives the
 # HTTP path). Stateless transport accepts a single-shot call.
