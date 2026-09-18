@@ -5,6 +5,31 @@ not blocking it.
 
 ---
 
+## `get_artist_profile` — 4th MCP tool? PARKED 2026-09-18, NOT STARTED
+
+**Parked, not scoped.** Raised while running parallel research agents to profile a
+full 53-act festival bill, one agent per artist. That job is the use case: given an
+artist name, return formed/lineup/history/key records/current-activity as structured
+data, rather than re-spending a research agent per artist per festival.
+
+Open questions, none answered yet:
+- **Source.** The existing tools are event-search (TM + JamBase); neither returns
+  biography. A profile tool needs a different upstream (MusicBrainz? Wikipedia/
+  Wikidata? an LLM leg?) — which makes it a different *kind* of tool than the
+  three shipped ones, and that is the actual decision, not the plumbing.
+- **Freshness.** The valuable half of a profile is "Now (2026)" — current tour,
+  latest record, lineup changes. That is exactly the half a static catalog source
+  will not have, and the half a cached answer rots fastest on.
+- **Injection surface.** An LLM leg over attacker-influenced upstream artist text
+  is the M3 residual in the security-review section below, one step closer.
+
+**Implementation note if it ever proceeds:** `src/smoke-http.ts:81` asserts the
+exact tool-name list `["search_by_artist","search_by_venue","search_concerts"]`
+by strict JSON equality, so a 4th tool fails that smoke test until it is updated.
+Registration lives at `src/build-server.ts:201`.
+
+---
+
 ## `search_by_artist` — JamBase leg ✅ SHIPPED 2026-07-16; feed leg + precision still open
 
 **JamBase leg DONE.** `search_by_artist` now fans out to TM + JamBase via `Promise.allSettled`,
