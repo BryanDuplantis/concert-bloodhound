@@ -46,6 +46,7 @@ export interface LogFields {
   status: number | string;
   code?: string;
   flow?: string; // /authorize 3xx flow-trace label only
+  mcpVersion?: string; // /mcp only; pre-validated date shape or "other"
   origin?: unknown;
   principal?: Principal;
 }
@@ -60,6 +61,7 @@ export function logLine(f: LogFields): void {
   ];
   if (f.flow) parts.push(`flow=${sanitize(f.flow)}`);
   if (f.code) parts.push(`code=${sanitize(f.code)}`);
+  if (f.mcpVersion) parts.push(`mcpver=${sanitize(f.mcpVersion)}`);
   parts.push(`origin=${sanitize(f.origin)}`);
   parts.push(`principal=${f.principal ?? "anon"}`);
   console.error(parts.join(" "));

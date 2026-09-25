@@ -18,7 +18,7 @@
     "smoke:mcp": "node dist/smoke-mcp.js",
     "smoke:jambase": "node --env-file=.env dist/smoke-jambase.js",
     "smoke:feeds": "node dist/smoke-feeds.js",
-    "test": "tsc && node --test dist/types.test.js dist/geo.test.js dist/merge.test.js dist/jambase.test.js dist/feeds/ical.test.js dist/feeds/redlight.test.js dist/feeds/freshtix.test.js dist/feeds/glover.test.js dist/feeds/kennesaw.test.js dist/feeds/gsu.test.js dist/trust-proxy.test.js",
+    "test": "tsc && node --test dist/types.test.js dist/geo.test.js dist/merge.test.js dist/jambase.test.js dist/feeds/ical.test.js dist/feeds/redlight.test.js dist/feeds/freshtix.test.js dist/feeds/glover.test.js dist/feeds/kennesaw.test.js dist/feeds/gsu.test.js dist/trust-proxy.test.js dist/request-log.test.js",
     "smoke:http": "node --env-file=.env dist/smoke-http.js"
   },
   "engines": {

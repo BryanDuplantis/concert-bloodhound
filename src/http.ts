@@ -13,7 +13,7 @@ import { FileClientStore, parseAllowedRedirectUris } from "./auth/store.js";
 import { combinedAuthMiddleware } from "./auth/gate.js";
 import { createConsentHandlers } from "./auth/consent.js";
 import { createRegisterRateLimit } from "./auth/rate-limit.js";
-import { requestLog, type LoggedRequest } from "./middleware/request-log.js";
+import { requestLog, tagRoute, type LoggedRequest } from "./middleware/request-log.js";
 
 /**
  * Trust X-Forwarded-For from loopback peers only, so the SDK's express-rate-limit
@@ -175,10 +175,6 @@ export async function runHttp(): Promise<void> {
   const app = express();
   app.set("trust proxy", TRUST_PROXY);
 
-  // Request-id mint + non-2xx logging hook — FIRST, before the body parsers,
-  // so parser 400/413 rejections carry a request id and log.
-  app.use(requestLog);
-
   const allowed = config.allowedOrigins;
   const issuerUrl = new URL(config.publicBaseUrl);
   const resourceServerUrl = new URL(`${config.publicBaseUrl}/mcp`);
@@ -192,6 +188,14 @@ export async function runHttp(): Promise<void> {
   // RFC well-knowns insert it per RFC 8414/9728. basePath "" = root deployment,
   // identical to the pre-rework layout.
   const basePath = issuerUrl.pathname === "/" ? "" : issuerUrl.pathname;
+
+  // Request-id mint + non-2xx logging hook — FIRST middleware, before the body parsers,
+  // so parser 400/413 rejections carry a request id and log.
+  app.use(requestLog);
+  app.all(`${basePath}/authorize`, tagRoute("authorize"));
+  app.all(`${basePath}/authorize/consent`, tagRoute("consent"));
+  app.all(`${basePath}/token`, tagRoute("token"));
+  app.all(`${basePath}/mcp`, tagRoute("mcp"));
 
   // Tool-call payloads are small (search args), but keep the /mcp parser
   // separate from the OAuth routes: /token and DCR /register take tiny
