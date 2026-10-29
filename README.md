@@ -1,3 +1,10 @@
+> **Pi deployment retired 2026-10-29. The project continues.** The remote-HTTP server on the Pi
+> (Funnel path, OAuth, system unit) is gone: its sources are Ticketmaster, now a native claude.ai
+> connector, and public web pages, so nothing here needs an always-on host. The transport and
+> OAuth stack were forked into `pi-tools` (the Duet-callable Pi toolbox). Concert Bloodhound
+> itself keeps working as a local stdio MCP server (Claude Code, Claude Desktop) with the
+> Atlanta venue feeds, JamBase and Ticketmaster logic intact; see Setup below.
+
 # Concert Bloodhound 🐾🎸
 
 An MCP server that helps you find upcoming concerts in any city — by city, genre,
