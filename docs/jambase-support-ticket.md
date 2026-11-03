@@ -14,7 +14,7 @@ requests them through a secure channel — never in a public form or email body.
 
 **Subject:** Active API plan, but every issued key returns `api_key_inactive` (incl. a freshly rotated key)
 
-**Account email:** duplantis@gmail.com
+**Account email:** <account email>
 
 **Summary:**
 Every API key issued under my account is rejected by the Data API v3 as

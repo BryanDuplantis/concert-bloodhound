@@ -53,7 +53,7 @@ REDIRECTS="$(sed -n 's/^OAUTH_ALLOWED_REDIRECT_URIS=//p' "$HOME/brain-mcp/.env.l
 umask 077
 {
     echo "MCP_PORT=3003"
-    echo "PUBLIC_BASE_URL=https://raspberrypi.tail5a9795.ts.net/bloodhound"
+    echo "PUBLIC_BASE_URL=https://<pi-host>.<tailnet>.ts.net/bloodhound"
     echo "MCP_SECRET=$(openssl rand -hex 32)"
     echo "OAUTH_AUTHORIZE_PASSWORD=$(openssl rand -hex 16)"
     echo "OAUTH_ALLOWED_REDIRECT_URIS=$REDIRECTS"

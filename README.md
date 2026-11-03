@@ -77,8 +77,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
     "concert-bloodhound": {
       "command": "node",
       "args": [
-        "--env-file=/Users/bryanduplantis/Projects/concert-bloodhound/.env",
-        "/Users/bryanduplantis/Projects/concert-bloodhound/dist/index.js"
+        "--env-file=/path/to/concert-bloodhound/.env",
+        "/path/to/concert-bloodhound/dist/index.js"
       ]
     }
   }
@@ -89,8 +89,8 @@ Restart Claude Desktop.
 ### Claude Code
 ```bash
 claude mcp add concert-bloodhound -- \
-  node --env-file=/Users/bryanduplantis/Projects/concert-bloodhound/.env \
-       /Users/bryanduplantis/Projects/concert-bloodhound/dist/index.js
+  node --env-file=/path/to/concert-bloodhound/.env \
+       /path/to/concert-bloodhound/dist/index.js
 ```
 No key on the command line — `--env-file` loads it from `.env`, so nothing
 secret lands in shell history.

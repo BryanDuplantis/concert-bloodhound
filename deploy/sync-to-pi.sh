@@ -19,7 +19,7 @@
 #
 # Usage:
 #   ./deploy/sync-to-pi.sh
-#   PI_HOST=100.118.159.68 ./deploy/sync-to-pi.sh   # Tailscale IP off-LAN
+#   PI_HOST=<pi-tailscale-ip> ./deploy/sync-to-pi.sh   # Tailscale IP off-LAN
 
 set -euo pipefail
 
