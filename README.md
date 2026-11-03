@@ -150,5 +150,3 @@ secret lands in shell history.
 - Relative dates ("this weekend") are resolved by the *calling* assistant into
   `startDate`/`endDate`, not by the server.
 - No resale pricing, seat maps, or fine-grained inventory.
-
-See `CLAUDE.md` for architecture and contributor conventions.
