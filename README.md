@@ -51,12 +51,12 @@ dates, coordinate resolution can also be done by the calling assistant.
 
 ## Status
 
-**Pi deployment retired 2026-10-29. The project continues.** The remote-HTTP server on the Pi
-(Funnel path, OAuth, system unit) is gone: its sources are Ticketmaster, now a native claude.ai
-connector, and public web pages, so nothing here needs an always-on host. The transport and
-OAuth stack were forked into `pi-tools` (the Duet-callable Pi toolbox). Concert Bloodhound
-itself keeps working as a local stdio MCP server (Claude Code, Claude Desktop) with the
-Atlanta venue feeds, JamBase and Ticketmaster logic intact; see Setup below.
+Runs locally as a stdio MCP server (Claude Code, Claude Desktop). It used to also
+run as a hosted HTTP service on a Raspberry Pi behind OAuth; that deployment was
+retired 2026-10-29 because its sources need no always-on host (Ticketmaster is now
+a native claude.ai connector, and the rest are public web pages). The hosting kit
+was removed from this repo, and the HTTP transport and OAuth stack live on in a
+separate private project. Ticketmaster, JamBase and feed logic are unchanged.
 
 ## Setup
 
