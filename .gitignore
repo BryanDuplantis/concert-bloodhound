@@ -6,3 +6,7 @@ dist/
 *.log
 .DS_Store
 *.html
+
+# working notes: local only, not published
+BACKLOG.md
+CLAUDE.md
