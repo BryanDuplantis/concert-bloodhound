@@ -1,21 +1,34 @@
-> **Pi deployment retired 2026-10-29. The project continues.** The remote-HTTP server on the Pi
-> (Funnel path, OAuth, system unit) is gone: its sources are Ticketmaster, now a native claude.ai
-> connector, and public web pages, so nothing here needs an always-on host. The transport and
-> OAuth stack were forked into `pi-tools` (the Duet-callable Pi toolbox). Concert Bloodhound
-> itself keeps working as a local stdio MCP server (Claude Code, Claude Desktop) with the
-> Atlanta venue feeds, JamBase and Ticketmaster logic intact; see Setup below.
-
 # Concert Bloodhound 🐾🎸
 
-An MCP server that helps you find upcoming concerts in any city — by city, genre,
-date, budget, artist, or venue. It returns **real listings only**, sourced live
-from the [Ticketmaster Discovery API](https://developer.ticketmaster.com/). It
-never invents prices, times, availability, or links: missing fields are reported
-plainly as "not listed."
+An MCP server that finds upcoming concerts in any city, by city, genre, date,
+budget, artist, or venue, and returns **real listings only**. It never invents
+prices, times, availability, or links: a missing field is reported plainly as
+"not listed."
 
-Drop it into any Claude surface (Claude Code, Claude Desktop) and ask:
+Nothing out there listed everything from arena tours down to a free civic show,
+so it queries several sources at once, merges the results, and drops the
+duplicates:
+
+- [Ticketmaster Discovery API](https://developer.ticketmaster.com/): the base catalog.
+- [JamBase](https://www.jambase.com/) Data API v3: clubs, festivals and free shows Ticketmaster misses (shown with `Powered by JamBase`).
+- Open feeds for Atlanta venues and civic calendars (iCal, RSS, and a few small HTML parsers).
+
+Every source is fetched independently, so one failing source degrades the answer
+instead of breaking it. Ticketmaster wins on price and ticket links when a show
+appears in more than one place.
+
+Drop it into any MCP client (Claude Code, Claude Desktop) and ask:
 
 > "Find indie concerts in Chicago under $50 this weekend."
+
+## How it's verified
+
+- `npm test`: offline unit suite for the metro resolver, merge and
+  dedup rules, the date-window trim, and each feed parser.
+- Live smoke tests (`npm run smoke`, `smoke:mcp`, `smoke:feeds`) exit non-zero
+  unless real, dated events come back, so a green run means data, not just rc=0.
+- Feed parsers throw on a zero-event parse of a page that should have events, so
+  a site redesign shows up as an error rather than as a confident empty answer.
 
 ## Tools
 
@@ -35,6 +48,15 @@ included), not just venues whose listing text reads "Atlanta". Cities outside th
 list fall back to a plain city text match; pass an explicit `latlong`
 (e.g. `"33.749,-84.388"`) to force metro coverage for any city. Like relative
 dates, coordinate resolution can also be done by the calling assistant.
+
+## Status
+
+**Pi deployment retired 2026-10-29. The project continues.** The remote-HTTP server on the Pi
+(Funnel path, OAuth, system unit) is gone: its sources are Ticketmaster, now a native claude.ai
+connector, and public web pages, so nothing here needs an always-on host. The transport and
+OAuth stack were forked into `pi-tools` (the Duet-callable Pi toolbox). Concert Bloodhound
+itself keeps working as a local stdio MCP server (Claude Code, Claude Desktop) with the
+Atlanta venue feeds, JamBase and Ticketmaster logic intact; see Setup below.
 
 ## Setup
 
